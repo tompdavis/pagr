@@ -1,0 +1,1 @@
+A project to try and fuse graphRag with financial portfolios.  
