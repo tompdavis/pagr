@@ -83,19 +83,20 @@ The application will be written in python 3.12.  The uv package manager will be 
 ### Phase 2
 *   Have a button to "Trade In/Out" 
 
-### Phase 3 
+### Phase 3
+*   When the portfolio is read from a file, create a GraphRAG database for queries about the portfolio
+
+### Phase 4 
 *   Implement the live view of the portfolio where the securities in the portfolio update their prices as the market ticks.
 
-### Phase 4
+### Phase 5
 *   Have a news feed which queries a news API for news items that reference the entities in the portfolio, as well as the sectors in the portfolio. 
 
-### Pase 5
+### Pase 6
 *  Create the scenario analysis  
-
-### Phase 6
-*   When the portfolio is read from a file, create a GraphRAG database for queries about the portfolio
 
 ### Future Phases
 *   Foreign exchange handling 
 *   Book value for calculating returns 
 *   Trade blotter
+*   Cash management

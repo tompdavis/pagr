@@ -40,6 +40,39 @@ else:
         st.info("Please upload a .pagr file.")
 
 if portfolio:
+    # Trade In/Out Section
+    with st.expander("Trade In/Out"):
+        col_trade_1, col_trade_2, col_trade_3 = st.columns([2, 2, 1])
+        with col_trade_1:
+            trade_ticker = st.text_input("Ticker Symbol").upper()
+        with col_trade_2:
+            trade_quantity = st.number_input("Quantity (Negative to Sell)", value=0.0, step=1.0)
+        with col_trade_3:
+            st.write("") # Spacer
+            st.write("") # Spacer
+            if st.button("Execute Trade"):
+                if not trade_ticker:
+                    st.error("Please enter a ticker.")
+                elif trade_quantity == 0:
+                    st.error("Please enter a non-zero quantity.")
+                else:
+                    from pagr.market_data import validate_ticker
+                    with st.spinner(f"Validating {trade_ticker}..."):
+                        if validate_ticker(trade_ticker):
+                            portfolio.add_position(trade_ticker, trade_quantity)
+                            # Save changes
+                            # If loaded from uploaded file, we can't easily save back to user's disk
+                            # But if loaded from default or temp, we can save there.
+                            # For now, let's assume we save to the path we loaded from if possible.
+                            # Since we are using a temp file for uploaded, this persists for the session but not user disk.
+                            # If using default, it saves to default.
+                            save_path = "temp_portfolio.pagr" if uploaded_file else "default_portfolio.pagr"
+                            portfolio.save(save_path)
+                            st.success(f"Trade executed: {trade_quantity} {trade_ticker}")
+                            st.rerun()
+                        else:
+                            st.error(f"Invalid ticker: {trade_ticker}")
+
     st.header(f"Portfolio: {portfolio.name}")
     
     with st.spinner("Fetching market data..."):

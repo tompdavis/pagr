@@ -66,3 +66,19 @@ def get_sector_info(tickers: List[str]) -> Dict[str, str]:
             sectors[ticker] = 'Unknown'
             
     return sectors
+
+def validate_ticker(ticker: str) -> bool:
+    """
+    Validates if a ticker exists using Yahoo Finance.
+    Returns True if valid, False otherwise.
+    """
+    cleaned = clean_ticker(ticker)
+    try:
+        # yfinance doesn't have a cheap 'exists' check. 
+        # We can try to fetch info or history. 
+        # .info can be slow and sometimes unreliable.
+        # Let's try fetching 1 day of history for validation.
+        data = yf.download(cleaned, period="1d", progress=False)
+        return not data.empty
+    except Exception:
+        return False

@@ -47,3 +47,47 @@ class Portfolio:
     def get_tickers(self) -> List[str]:
         """Returns a list of tickers in the portfolio."""
         return [p.ticker for p in self.positions]
+
+    def add_position(self, ticker: str, quantity: float):
+        """
+        Adds or updates a position in the portfolio.
+        If quantity becomes 0, the position is removed.
+        """
+        # Check if position exists
+        existing_pos = next((p for p in self.positions if p.ticker == ticker), None)
+        
+        if existing_pos:
+            existing_pos.quantity += quantity
+            # Remove if quantity is 0 (or very close to 0 to handle float precision)
+            if abs(existing_pos.quantity) < 1e-9:
+                self.positions.remove(existing_pos)
+        else:
+            if abs(quantity) > 1e-9:
+                # Add new position
+                # Note: book_value is not updated correctly here as we don't have price info
+                # For now, we'll just set it to 0 or keep it as is. 
+                # Ideally we'd pass price to this method or update it later.
+                self.positions.append(Position(
+                    ticker=ticker,
+                    quantity=quantity,
+                    book_value=0.0 # Placeholder
+                ))
+
+    def save(self, file_path: str | Path):
+        """Saves the portfolio to a .pagr (JSON) file."""
+        data = {
+            "portfolio_name": self.name,
+            "currency": self.currency,
+            "last_updated": self.last_updated,
+            "positions": [
+                {
+                    "ticker": p.ticker,
+                    "quantity": p.quantity,
+                    "book_value": p.book_value
+                }
+                for p in self.positions
+            ]
+        }
+        
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=2)
