@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from streamlit_agraph import agraph, Node, Edge, Config
 from pagr.portfolio import Portfolio
 from pagr.market_data import get_current_prices
 from pagr import db
@@ -13,6 +14,9 @@ st.title("Portfolio Analysis with GraphRag (PAGR)")
 # Sidebar for file selection
 st.sidebar.header("Portfolio Selection")
 uploaded_file = st.sidebar.file_uploader("Upload a .pagr file", type="pagr")
+
+# View Selection
+view_selection = st.sidebar.radio("Select View", ["Tabular by Sector", "Graph"])
 
 # Load default if no file uploaded
 portfolio = None
@@ -81,69 +85,113 @@ if portfolio:
 
     st.header(f"Portfolio: {portfolio.name}")
     
-    with st.spinner("Fetching market data..."):
-        # Fetch view from DB
-        try:
-            db_positions = db.get_portfolio_view(portfolio.name)
-        except Exception as e:
-            st.error(f"Error querying database: {e}")
-            db_positions = []
+    if view_selection == "Tabular by Sector":
+        with st.spinner("Fetching market data..."):
+            # Fetch view from DB
+            try:
+                db_positions = db.get_portfolio_view(portfolio.name)
+            except Exception as e:
+                st.error(f"Error querying database: {e}")
+                db_positions = []
 
-        tickers = [p['ticker'] for p in db_positions]
-        prices = get_current_prices(tickers)
-        
-        # Update portfolio positions
-        portfolio_data = []
-        total_value = 0.0
-        
-        for pos in db_positions:
-            ticker = pos['ticker']
-            quantity = pos['quantity']
-            sector = pos['sector']
+            tickers = [p['ticker'] for p in db_positions]
+            prices = get_current_prices(tickers)
             
-            price = prices.get(ticker, 0.0)
-            # If price is a Series (sometimes happens with yfinance), get the float value
-            if isinstance(price, pd.Series):
-                price = price.iloc[0]
+            # Update portfolio positions
+            portfolio_data = []
+            total_value = 0.0
             
-            # Handle NaN prices
-            if pd.isna(price):
-                price = 0.0
+            for pos in db_positions:
+                ticker = pos['ticker']
+                quantity = pos['quantity']
+                sector = pos['sector']
                 
-            current_price = float(price)
-            market_value = quantity * current_price
-            total_value += market_value
+                price = prices.get(ticker, 0.0)
+                # If price is a Series (sometimes happens with yfinance), get the float value
+                if isinstance(price, pd.Series):
+                    price = price.iloc[0]
+                
+                # Handle NaN prices
+                if pd.isna(price):
+                    price = 0.0
+                    
+                current_price = float(price)
+                market_value = quantity * current_price
+                total_value += market_value
+                
+                portfolio_data.append({
+                    "Ticker": ticker,
+                    "Quantity": quantity,
+                    "Market Price": f"{portfolio.currency} {current_price:,.2f}",
+                    "Market Value": market_value, # Keep as number for sorting/charting
+                    "Sector": sector
+                })
+                
+            df = pd.DataFrame(portfolio_data)
             
-            portfolio_data.append({
-                "Ticker": ticker,
-                "Quantity": quantity,
-                "Market Price": f"{portfolio.currency} {current_price:,.2f}",
-                "Market Value": market_value, # Keep as number for sorting/charting
-                "Sector": sector
-            })
+            # Display Metrics
+            st.metric("Total Portfolio Value", f"{portfolio.currency} {total_value:,.2f}")
             
-        df = pd.DataFrame(portfolio_data)
-        
-        # Display Metrics
-        st.metric("Total Portfolio Value", f"{portfolio.currency} {total_value:,.2f}")
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("Positions")
-            # Format Market Value for display
-            display_df = df.copy()
-            display_df["Market Value"] = display_df["Market Value"].apply(lambda x: f"{portfolio.currency} {x:,.2f}")
-            st.dataframe(display_df, use_container_width=True)
+            col1, col2 = st.columns([2, 1])
             
-        with col2:
-            st.subheader("Sector Allocation")
-            if not df.empty:
-                # Group by sector
-                sector_df = df.groupby("Sector")["Market Value"].sum().reset_index()
-                # Sort by Market Value descending
-                sector_df = sector_df.sort_values("Market Value", ascending=False)
-                fig = px.bar(sector_df, x="Sector", y="Market Value", title="Portfolio Value by Sector", color="Sector")
-                # Update layout to respect the sort order
-                fig.update_layout(xaxis={'categoryorder':'total descending'})
-                st.plotly_chart(fig, use_container_width=True)
+            with col1:
+                st.subheader("Positions")
+                # Format Market Value for display
+                display_df = df.copy()
+                display_df["Market Value"] = display_df["Market Value"].apply(lambda x: f"{portfolio.currency} {x:,.2f}")
+                st.dataframe(display_df, use_container_width=True)
+                
+            with col2:
+                st.subheader("Sector Allocation")
+                if not df.empty:
+                    # Group by sector
+                    sector_df = df.groupby("Sector")["Market Value"].sum().reset_index()
+                    # Sort by Market Value descending
+                    sector_df = sector_df.sort_values("Market Value", ascending=False)
+                    fig = px.bar(sector_df, x="Sector", y="Market Value", title="Portfolio Value by Sector", color="Sector")
+                    # Update layout to respect the sort order
+                    fig.update_layout(xaxis={'categoryorder':'total descending'})
+                    st.plotly_chart(fig, use_container_width=True)
+
+    elif view_selection == "Graph":
+        st.subheader("Portfolio Graph")
+        with st.spinner("Generating graph..."):
+            try:
+                nodes_data, edges_data = db.get_graph_data(portfolio.name)
+                
+                nodes = []
+                for n in nodes_data:
+                    nodes.append(Node(
+                        id=n['id'],
+                        label=n['label'],
+                        size=n['size'],
+                        color=n['color'],
+                        title=n.get('title', '')
+                    ))
+                    
+                edges = []
+                for e in edges_data:
+                    edges.append(Edge(
+                        source=e['source'],
+                        target=e['target'],
+                        label=e['label']
+                    ))
+                
+                config = Config(width=800, 
+                                height=600, 
+                                directed=True, 
+                                physics=True, 
+                                hierarchical=False,
+                                nodeHighlightBehavior=True,
+                                highlightColor="#F7A7A6",
+                                collapsible=True)
+                
+                return_value = agraph(nodes=nodes, 
+                                      edges=edges, 
+                                      config=config)
+                                      
+                if return_value:
+                    st.info(f"Selected Node: {return_value}")
+                    
+            except Exception as e:
+                st.error(f"Error generating graph: {e}")
