@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pagr.portfolio import Portfolio
-from pagr.market_data import get_current_prices, get_sector_info
+from pagr.market_data import get_current_prices
+from pagr import db
 from pathlib import Path
 
 st.set_page_config(page_title="PAGR - Portfolio Analysis", layout="wide")
@@ -40,6 +41,11 @@ else:
         st.info("Please upload a .pagr file.")
 
 if portfolio:
+    # Sync to Database
+    try:
+        portfolio.to_db()
+    except Exception as e:
+        st.error(f"Failed to sync with database: {e}")
     # Trade In/Out Section
     with st.expander("Trade In/Out"):
         col_trade_1, col_trade_2, col_trade_3 = st.columns([2, 2, 1])
@@ -76,16 +82,26 @@ if portfolio:
     st.header(f"Portfolio: {portfolio.name}")
     
     with st.spinner("Fetching market data..."):
-        tickers = portfolio.get_tickers()
+        # Fetch view from DB
+        try:
+            db_positions = db.get_portfolio_view(portfolio.name)
+        except Exception as e:
+            st.error(f"Error querying database: {e}")
+            db_positions = []
+
+        tickers = [p['ticker'] for p in db_positions]
         prices = get_current_prices(tickers)
-        sectors = get_sector_info(tickers)
         
         # Update portfolio positions
         portfolio_data = []
         total_value = 0.0
         
-        for pos in portfolio.positions:
-            price = prices.get(pos.ticker, 0.0)
+        for pos in db_positions:
+            ticker = pos['ticker']
+            quantity = pos['quantity']
+            sector = pos['sector']
+            
+            price = prices.get(ticker, 0.0)
             # If price is a Series (sometimes happens with yfinance), get the float value
             if isinstance(price, pd.Series):
                 price = price.iloc[0]
@@ -94,17 +110,16 @@ if portfolio:
             if pd.isna(price):
                 price = 0.0
                 
-            pos.current_price = float(price)
-            pos.sector = sectors.get(pos.ticker, "Unknown")
-            pos.market_value = pos.quantity * pos.current_price
-            total_value += pos.market_value
+            current_price = float(price)
+            market_value = quantity * current_price
+            total_value += market_value
             
             portfolio_data.append({
-                "Ticker": pos.ticker,
-                "Quantity": pos.quantity,
-                "Market Price": f"{portfolio.currency} {pos.current_price:,.2f}",
-                "Market Value": pos.market_value, # Keep as number for sorting/charting
-                "Sector": pos.sector
+                "Ticker": ticker,
+                "Quantity": quantity,
+                "Market Price": f"{portfolio.currency} {current_price:,.2f}",
+                "Market Value": market_value, # Keep as number for sorting/charting
+                "Sector": sector
             })
             
         df = pd.DataFrame(portfolio_data)

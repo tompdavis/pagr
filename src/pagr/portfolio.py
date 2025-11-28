@@ -91,3 +91,8 @@ class Portfolio:
         
         with open(file_path, 'w') as f:
             json.dump(data, f, indent=2)
+
+    def to_db(self):
+        """Persists the portfolio to the Memgraph database."""
+        from pagr import db
+        db.load_portfolio(self)

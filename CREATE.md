@@ -33,3 +33,11 @@ The portfolio will be read in from a file with the extension '.pagr'.  This file
 }
 
 Upon reading in the portfolio, use the finance api to clean the ticker name, fetch the sector and the market price from last night's market close.  This will be used in the portfolio view.  
+
+
+There is a python script in the directory called simple_gleif.py that does two things.  
+ 1. Encriches the portfolio positions with data from GLEIF
+ 1. Adds the portfolio to a local memgraph database 
+
+Use this script as a guide to construct the enriched portolio data structure and create the database.  
+

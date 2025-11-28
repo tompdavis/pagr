@@ -1,6 +1,9 @@
 import yfinance as yf
 import pandas as pd
-from typing import List, Dict, Any
+import requests
+import re
+import urllib.parse
+from typing import List, Dict, Any, Optional
 
 def clean_ticker(ticker: str) -> str:
     """Replaces dots with dashes for Yahoo Finance compatibility."""
@@ -82,3 +85,63 @@ def validate_ticker(ticker: str) -> bool:
         return not data.empty
     except Exception:
         return False
+
+def fetch_company_metadata(ticker: str) -> Dict[str, Any]:
+    """
+    Fetches Sector (Yahoo) and LEI/Legal Name (GLEIF).
+    """
+    metadata = {
+        "sector": "Unknown",
+        "lei": None,
+        "legal_name": f"Unknown ({ticker})"
+    }
+
+    try:
+        # 1. Yahoo Finance (Sector & ISIN)
+        yf_ticker = clean_ticker(ticker)
+        stock = yf.Ticker(yf_ticker)
+        
+        # Note: yfinance can be flaky. If 'info' fails, we handle it.
+        try:
+            info = stock.info
+            metadata['sector'] = info.get('sector', 'Unknown')
+            isin = stock.isin
+            # Fallback to shortName if longName is missing
+            name = info.get('longName') or info.get('shortName')
+        except Exception:
+            # Fallback if info fails
+            info = {}
+            isin = None
+            name = None
+        
+        # 2. GLEIF (LEI via ISIN)
+        lei_found = False
+        if isin and isin != '-' and re.match(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$', isin):
+            url = f"https://api.gleif.org/api/v1/lei-records?filter[isin]={isin}"
+            try:
+                resp = requests.get(url).json()
+                if resp.get('data'):
+                    record = resp['data'][0]['attributes']
+                    metadata['lei'] = record['lei']
+                    metadata['legal_name'] = record['entity']['legalName']['name']
+                    lei_found = True
+            except Exception:
+                pass
+
+        # 3. GLEIF (Fallback: Fuzzy Name Search)
+        if not lei_found and name:
+            safe_name = urllib.parse.quote(name)
+            url = f"https://api.gleif.org/api/v1/lei-records?filter[entity.legalName]={safe_name}"
+            try:
+                resp = requests.get(url).json()
+                if resp.get('data'):
+                    record = resp['data'][0]['attributes']
+                    metadata['lei'] = record['lei']
+                    metadata['legal_name'] = record['entity']['legalName']['name']
+            except Exception:
+                pass
+
+    except Exception as e:
+        print(f"Metadata fetch issue for {ticker}: {e}")
+
+    return metadata

@@ -84,7 +84,9 @@ The application will be written in python 3.12.  The uv package manager will be 
 *   Have a button to "Trade In/Out" 
 
 ### Phase 3
-*   When the portfolio is read from a file, create a GraphRAG database for queries about the portfolio
+*   Start using a memgraph database on localhost:7687
+*   When the portfolio is read from a file, create a memgraph database for queries about the portfolio
+*   All views should now be done by querying the database 
 
 ### Phase 4 
 *   Implement the live view of the portfolio where the securities in the portfolio update their prices as the market ticks.
@@ -96,7 +98,10 @@ The application will be written in python 3.12.  The uv package manager will be 
 *  Create the scenario analysis  
 
 ### Future Phases
+*   Add FIBO ontology 
 *   Foreign exchange handling 
 *   Book value for calculating returns 
 *   Trade blotter
 *   Cash management
+*   Multi-Asset Class
+    *   Derivatives
