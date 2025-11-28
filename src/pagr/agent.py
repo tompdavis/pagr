@@ -98,7 +98,8 @@ Nodes:
     - lei (String)
     - ticker (String)
     - currency (String)
-    - country (String)
+    - country_code (String) - ISO 3166-1 alpha-2 code (e.g., 'US', 'GB'). Represents Headquarters.
+    - country_of_risk (String) - ISO 3166-1 alpha-2 code. Represents Legal Jurisdiction.
 
 Relationships:
 - (:Portfolio)-[:CONTAINS]->(:Position)
@@ -121,10 +122,10 @@ Before calling the tool, think step-by-step:
 ### EXAMPLES
 
 User: "What is my exposure by country?"
-Thought: The user wants to sum book_val grouped by company country for the current portfolio ID '{current_portfolio_id}'.
+Thought: The user wants to sum book_val grouped by company country code for the current portfolio ID '{current_portfolio_id}'.
 Tool Call:
 MATCH (p:Portfolio {name: '{current_portfolio_id}'})-[:CONTAINS]->(pos:Position)-[:IS_INVESTED_IN]->(c:Company)
-RETURN c.country as country, sum(pos.book_val) as total_exposure
+RETURN c.country_code as country, sum(pos.book_val) as total_exposure
 ORDER BY total_exposure DESC
 
 User: "List all my positions in Apple."

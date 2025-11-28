@@ -88,12 +88,14 @@ def validate_ticker(ticker: str) -> bool:
 
 def fetch_company_metadata(ticker: str) -> Dict[str, Any]:
     """
-    Fetches Sector (Yahoo) and LEI/Legal Name (GLEIF).
+    Fetches Sector (Yahoo) and LEI/Legal Name/Country (GLEIF).
     """
     metadata = {
         "sector": "Unknown",
         "lei": None,
-        "legal_name": f"Unknown ({ticker})"
+        "legal_name": f"Unknown ({ticker})",
+        "country_code": "Unknown",
+        "country_of_risk": "Unknown"
     }
 
     try:
@@ -124,6 +126,22 @@ def fetch_company_metadata(ticker: str) -> Dict[str, Any]:
                     record = resp['data'][0]['attributes']
                     metadata['lei'] = record['lei']
                     metadata['legal_name'] = record['entity']['legalName']['name']
+                    
+                    # Extract Country Code (Headquarters)
+                    try:
+                        metadata['country_code'] = record['entity']['headquartersAddress']['country']
+                    except KeyError:
+                        pass
+                        
+                    # Extract Country of Risk (Legal Jurisdiction)
+                    try:
+                        jurisdiction = record['entity']['legalJurisdiction']
+                        # Handle cases like "US-DL" -> "US"
+                        if jurisdiction and len(jurisdiction) >= 2:
+                            metadata['country_of_risk'] = jurisdiction[:2]
+                    except KeyError:
+                        pass
+
                     lei_found = True
             except Exception:
                 pass
@@ -138,6 +156,21 @@ def fetch_company_metadata(ticker: str) -> Dict[str, Any]:
                     record = resp['data'][0]['attributes']
                     metadata['lei'] = record['lei']
                     metadata['legal_name'] = record['entity']['legalName']['name']
+                    
+                    # Extract Country Code (Headquarters)
+                    try:
+                        metadata['country_code'] = record['entity']['headquartersAddress']['country']
+                    except KeyError:
+                        pass
+                        
+                    # Extract Country of Risk (Legal Jurisdiction)
+                    try:
+                        jurisdiction = record['entity']['legalJurisdiction']
+                        # Handle cases like "US-DL" -> "US"
+                        if jurisdiction and len(jurisdiction) >= 2:
+                            metadata['country_of_risk'] = jurisdiction[:2]
+                    except KeyError:
+                        pass
             except Exception:
                 pass
 

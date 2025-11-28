@@ -45,7 +45,9 @@ def load_portfolio(portfolio: Portfolio):
                 SET c.name = $legal_name,
                     c.lei = $lei,
                     c.sector = $sector,
-                    c.ticker = $ticker
+                    c.ticker = $ticker,
+                    c.country_code = $country_code,
+                    c.country_of_risk = $country_of_risk
                 
                 MERGE (p)-[:CONTAINS]->(pos)
                 MERGE (pos)-[:IS_INVESTED_IN]->(c)
@@ -59,7 +61,9 @@ def load_portfolio(portfolio: Portfolio):
                             company_id=company_id,
                             legal_name=meta['legal_name'],
                             lei=meta['lei'],
-                            sector=meta['sector'])
+                            sector=meta['sector'],
+                            country_code=meta.get('country_code', 'Unknown'),
+                            country_of_risk=meta.get('country_of_risk', 'Unknown'))
     finally:
         driver.close()
 
