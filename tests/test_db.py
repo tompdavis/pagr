@@ -28,7 +28,9 @@ def test_load_and_view_portfolio(sample_portfolio):
         mock_fetch.return_value = {
             "sector": "Technology",
             "lei": "TEST_LEI",
-            "legal_name": "Test Company"
+            "legal_name": "Test Company",
+            "country_code": "US",
+            "country_of_risk": "US"
         }
         
         try:
@@ -45,6 +47,8 @@ def test_load_and_view_portfolio(sample_portfolio):
             
             # Check sector (should be what we mocked)
             assert view[0]['sector'] == "Technology"
+            assert view[0]['country_code'] == "US"
+            assert view[0]['company_name'] == "Test Company"
             
         except Exception as e:
             pytest.fail(f"Database operation failed: {e}")

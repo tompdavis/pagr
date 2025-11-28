@@ -77,7 +77,7 @@ def get_portfolio_view(portfolio_name: str):
         with driver.session() as session:
             query = """
             MATCH (p:Portfolio {name: $name})-[:CONTAINS]->(pos:Position)-[:IS_INVESTED_IN]->(c:Company)
-            RETURN pos.ticker as ticker, pos.qty as quantity, pos.book_val as book_value, c.sector as sector
+            RETURN pos.ticker as ticker, pos.qty as quantity, pos.book_val as book_value, c.sector as sector, c.country_code as country_code, c.country_of_risk as country_of_risk, c.name as company_name
             """
             result = session.run(query, name=portfolio_name)
             return [record.data() for record in result]

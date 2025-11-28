@@ -129,6 +129,8 @@ if portfolio:
                 ticker = pos['ticker']
                 quantity = pos['quantity']
                 sector = pos['sector']
+                country = pos.get('country_code', 'Unknown')
+                company = pos.get('company_name', 'Unknown')
                 
                 price = prices.get(ticker, 0.0)
                 # If price is a Series (sometimes happens with yfinance), get the float value
@@ -148,7 +150,9 @@ if portfolio:
                     "Quantity": quantity,
                     "Market Price": f"{portfolio.currency} {current_price:,.2f}",
                     "Market Value": market_value, # Keep as number for sorting/charting
-                    "Sector": sector
+                    "Sector": sector,
+                    "Country": country,
+                    "Company": company
                 })
                 
             df = pd.DataFrame(portfolio_data)
@@ -166,13 +170,16 @@ if portfolio:
                 st.dataframe(display_df, use_container_width=True)
                 
             with col2:
-                st.subheader("Sector Allocation")
+                st.subheader("Exposure Analysis")
+                exposure_type = st.selectbox("Exposure Type", ["Sector", "Country", "Company"])
+                
                 if not df.empty:
-                    # Group by sector
-                    sector_df = df.groupby("Sector")["Market Value"].sum().reset_index()
+                    # Group by selected exposure type
+                    group_col = exposure_type
+                    chart_df = df.groupby(group_col)["Market Value"].sum().reset_index()
                     # Sort by Market Value descending
-                    sector_df = sector_df.sort_values("Market Value", ascending=False)
-                    fig = px.bar(sector_df, x="Sector", y="Market Value", title="Portfolio Value by Sector", color="Sector")
+                    chart_df = chart_df.sort_values("Market Value", ascending=False)
+                    fig = px.bar(chart_df, x=group_col, y="Market Value", title=f"Portfolio Value by {exposure_type}", color=group_col)
                     # Update layout to respect the sort order
                     fig.update_layout(xaxis={'categoryorder':'total descending'})
                     st.plotly_chart(fig, use_container_width=True)
