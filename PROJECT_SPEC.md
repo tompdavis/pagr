@@ -48,10 +48,11 @@ The components are:
     *   This will also be used internally by the scneario analysis agent.  
     *   Ability to save common scenarios in a "repository"
 
+*   Please use uv for dependencies, adding packages, managing virtual environments, syncing and running.  Don't start any development work without running `uv sync`
 
 There are some external APIs used, and they need to be configured and have the ability to choose between different providers
 1. Financial data: default is yahoo finance api 
-2. LLM: default is a local install of ollama using llama3.1:8b 
+2. LLM: default is a local install of ollama using llama3.1:8b on localhost port 11434
 3. News feed: TODO
 4. Sector classification: While I would like to use GICS, it's not clear whether this can be done consistently, so using an API to do this can provide an abstraction.  
 
@@ -89,16 +90,16 @@ The application will be written in python 3.12.  The uv package manager will be 
 *   All views should now be done by querying the database 
 
 ### Phase 4 
-*   Implement the live view of the portfolio where the securities in the portfolio update their prices as the market ticks.
+*   Add LLM for the user to query database
 
 ### Phase 5
-*   Have a news feed which queries a news API for news items that reference the entities in the portfolio, as well as the sectors in the portfolio. 
-
-### Pase 6
 *  Create the scenario analysis  
+
 
 ### Future Phases
 *   Add FIBO ontology 
+*   Live ticks 
+*   News feed 
 *   Foreign exchange handling 
 *   Book value for calculating returns 
 *   Trade blotter

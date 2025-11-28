@@ -5,7 +5,12 @@ from streamlit_agraph import agraph, Node, Edge, Config
 from pagr.portfolio import Portfolio
 from pagr.market_data import get_current_prices
 from pagr import db
+from pagr import db
 from pathlib import Path
+from pagr.agent import get_agent, StatusCallbackHandler
+from langchain_core.messages import HumanMessage, AIMessage
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+import threading
 
 st.set_page_config(page_title="PAGR - Portfolio Analysis", layout="wide")
 
@@ -195,3 +200,90 @@ if portfolio:
                     
             except Exception as e:
                 st.error(f"Error generating graph: {e}")
+
+    # --- PORTFOLIO CHAT ---
+    st.markdown("---")
+    st.header("Portfolio Chat")
+    
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
+    # Initialize logs
+    if "agent_logs" not in st.session_state:
+        st.session_state.agent_logs = []
+
+    col_chat, col_logs = st.columns([1, 1])
+
+    with col_chat:
+        st.subheader("Chat")
+        # Display chat messages from history on app rerun
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        if prompt := st.chat_input("Ask about your portfolio..."):
+            # Add user message to chat history
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            # Display user message in chat message container
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Display assistant response in chat message container
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                
+                # Capture the current script run context
+                ctx = get_script_run_ctx()
+                
+                # Callback to update logs
+                def log_callback(msg):
+                    # Attach the context to the current thread (which might be a worker thread)
+                    if ctx:
+                        add_script_run_ctx(threading.current_thread(), ctx)
+                    
+                    # Now we can safely access session_state
+                    if "agent_logs" in st.session_state:
+                        st.session_state.agent_logs.append(msg)
+                    
+                handler = StatusCallbackHandler(log_callback)
+                
+                try:
+                    agent = get_agent()
+                    # Convert session messages to LangChain format
+                    history = []
+                    for msg in st.session_state.messages:
+                        if msg["role"] == "user":
+                            history.append(HumanMessage(content=msg["content"]))
+                        elif msg["role"] == "assistant":
+                            history.append(AIMessage(content=msg["content"]))
+                    
+                    # Invoke agent
+                    # We only pass the new message effectively, but LangGraph manages state if we passed the whole history?
+                    # Actually, for this simple agent, we pass the list of messages.
+                    
+                    response = agent.invoke(
+                        {"messages": history},
+                        config={"callbacks": [handler]}
+                    )
+                    
+                    full_response = response["messages"][-1].content
+                    message_placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    st.session_state.agent_logs.append(f"Error: {e}")
+
+    with col_logs:
+        st.subheader("Agent Logs")
+        if st.button("Reset Context"):
+            st.session_state.messages = []
+            st.session_state.agent_logs = []
+            st.rerun()
+            
+        log_container = st.container(height=400)
+        with log_container:
+            for log in st.session_state.agent_logs:
+                st.text(f"• {log}")
+
