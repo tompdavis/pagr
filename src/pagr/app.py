@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import pandas as pd
 import plotly.express as px
 from streamlit_agraph import agraph, Node, Edge, Config
@@ -11,6 +12,10 @@ from pagr.agent import get_agent, StatusCallbackHandler
 from langchain_core.messages import HumanMessage, AIMessage
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 import threading
+
+@st.cache_resource
+def get_cached_agent():
+    return get_agent()
 
 st.set_page_config(page_title="PAGR - Portfolio Analysis", layout="wide")
 
@@ -45,7 +50,21 @@ else:
     # Try to load default
     default_path = Path("default_portfolio.pagr")
     if default_path.exists():
-        portfolio = Portfolio.from_file(default_path)
+        # We need to know the name to check the DB. 
+        # We can peek into the file or just assume a default name if we want to be strict, 
+        # but Portfolio.load takes a name. 
+        # Let's peek into the file to get the name, or just try to load it.
+        # Actually, Portfolio.load needs the name to check the DB.
+        # If we don't know the name, we can't check the DB efficiently without querying all portfolios.
+        # Let's assume we read the name from the file first.
+        try:
+            with open(default_path, 'r') as f:
+                data = json.load(f)
+                name = data.get('portfolio_name', 'Unknown Portfolio')
+            
+            portfolio = Portfolio.load(name, default_path)
+        except Exception as e:
+            st.error(f"Error loading default portfolio: {e}")
     else:
         st.info("Please upload a .pagr file.")
 
@@ -249,7 +268,7 @@ if portfolio:
                 handler = StatusCallbackHandler(log_callback)
                 
                 try:
-                    agent = get_agent()
+                    agent = get_cached_agent()
                     # Convert session messages to LangChain format
                     history = []
                     for msg in st.session_state.messages:

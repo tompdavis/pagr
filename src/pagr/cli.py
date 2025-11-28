@@ -3,26 +3,23 @@ from pagr.agent import get_agent, StatusCallbackHandler
 from pagr.db import get_driver
 from langchain_core.messages import HumanMessage, AIMessage
 
-PORTFOLIO_NAME = "USD Odlum Portfolio"
+from pagr.portfolio import Portfolio
+from pathlib import Path
 
-def check_portfolio_exists(name):
-    driver = get_driver()
-    try:
-        with driver.session() as session:
-            result = session.run("MATCH (p:Portfolio {name: $name}) RETURN p", name=name)
-            return result.single() is not None
-    except Exception as e:
-        print(f"Database connection error: {e}")
-        return False
-    finally:
-        driver.close()
+PORTFOLIO_NAME = "USD Odlum Portfolio"
+DEFAULT_FILE = Path("default_portfolio.pagr")
 
 def main():
-    if not check_portfolio_exists(PORTFOLIO_NAME):
-        print(f"Error: Portfolio '{PORTFOLIO_NAME}' not found in database.")
+    print(f"Chatbot CLI - querying '{PORTFOLIO_NAME}'")
+    
+    try:
+        # Load portfolio (checks DB first, then file)
+        portfolio = Portfolio.load(PORTFOLIO_NAME, DEFAULT_FILE)
+        print(f"Successfully loaded portfolio: {portfolio.name}")
+    except Exception as e:
+        print(f"Error loading portfolio: {e}")
         sys.exit(1)
 
-    print(f"Chatbot CLI - querying '{PORTFOLIO_NAME}'")
     print("Type 'exit' or 'quit' to stop.")
 
     agent = get_agent()

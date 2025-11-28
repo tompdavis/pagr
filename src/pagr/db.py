@@ -166,3 +166,57 @@ def get_graph_data(portfolio_name: str):
         driver.close()
         
     return nodes_data, edges_data
+
+def check_portfolio_exists(name: str) -> bool:
+    """Checks if a portfolio with the given name exists in the database."""
+    driver = get_driver()
+    try:
+        with driver.session() as session:
+            result = session.run("MATCH (p:Portfolio {name: $name}) RETURN p", name=name)
+            return result.single() is not None
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        return False
+    finally:
+        driver.close()
+
+def get_portfolio(name: str) -> Portfolio:
+    """
+    Retrieves a Portfolio object from the database.
+    """
+    driver = get_driver()
+    try:
+        with driver.session() as session:
+            # Fetch Portfolio metadata
+            p_result = session.run("MATCH (p:Portfolio {name: $name}) RETURN p", name=name)
+            p_record = p_result.single()
+            if not p_record:
+                raise ValueError(f"Portfolio {name} not found in database")
+            
+            # Fetch Positions
+            query = """
+            MATCH (p:Portfolio {name: $name})-[:CONTAINS]->(pos:Position)
+            RETURN pos.ticker as ticker, pos.qty as qty, pos.book_val as book_val
+            """
+            pos_result = session.run(query, name=name)
+            
+            positions = []
+            from pagr.portfolio import Position # Import here to avoid circular dependency if any
+            
+            for record in pos_result:
+                positions.append(Position(
+                    ticker=record['ticker'],
+                    quantity=record['qty'],
+                    book_value=record['book_val']
+                ))
+            
+            # We don't store currency or last_updated in DB currently, so use defaults or placeholders
+            # If we want to store them, we need to update load_portfolio to save them on the Portfolio node
+            return Portfolio(
+                name=name,
+                currency="USD", # Default
+                last_updated="", # Default
+                positions=positions
+            )
+    finally:
+        driver.close()
