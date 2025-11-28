@@ -263,7 +263,7 @@ if portfolio:
                     # Actually, for this simple agent, we pass the list of messages.
                     
                     response = agent.invoke(
-                        {"messages": history},
+                        {"messages": history, "portfolio_id": portfolio.name},
                         config={"callbacks": [handler]}
                     )
                     

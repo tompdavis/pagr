@@ -45,7 +45,7 @@ def main():
 
             handler = StatusCallbackHandler(log_callback)
 
-            response = agent.invoke({"messages": history}, config={"callbacks": [handler]})
+            response = agent.invoke({"messages": history, "portfolio_id": PORTFOLIO_NAME}, config={"callbacks": [handler]})
             ai_msg = response["messages"][-1]
             history.append(ai_msg)
             
