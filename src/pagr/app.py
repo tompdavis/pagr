@@ -19,9 +19,25 @@ def get_cached_agent():
 
 st.set_page_config(page_title="PAGR - Portfolio Analysis", layout="wide")
 
-st.title("Portfolio Analysis with GraphRag (PAGR)")
+# Custom CSS for background color
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #061636;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #061636;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 
 # Sidebar for file selection
+st.sidebar.image("marketing/pagr_asset_1.png", width=300)
 st.sidebar.header("Portfolio Selection")
 uploaded_file = st.sidebar.file_uploader("Upload a .pagr file", type="pagr")
 

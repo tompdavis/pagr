@@ -12,9 +12,14 @@ from typing import Annotated
 import operator
 
 # Configuration
-MODEL_NAME = "llama3.1:8b"
-OLLAMA_BASE_URL = "http://localhost:11434"
+MODEL_NAME = "gpt-oss:120b:cloud"
+#MODEL_NAME = "hf.co/second-state/FinGPT-MT-Llama-3-8B-LoRA-GGUF:Q4_K_M"
+OLLAMA_BASE_URL = "https://ollama.com"
 MAX_RETRIES = 5
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv("settings.env")
 
 # --- STATE ---
 class AgentState(TypedDict):
@@ -160,7 +165,12 @@ You MUST use the `search_portfolio` tool to execute Cypher.
     # This ensures the model sees instructions first, then the user's question.
     messages_with_system = [system_message] + messages
 
-    model = ChatOllama(model=MODEL_NAME, base_url=OLLAMA_BASE_URL, temperature=0)
+    model = ChatOllama(
+        model=MODEL_NAME, 
+        base_url=OLLAMA_BASE_URL, 
+        temperature=0,
+        headers={"Authorization": f"Bearer {os.environ.get('OLLAMA_API_KEY')}"}
+    )
     model = model.bind_tools([search_portfolio])
     
     # 4. Invoke with the updated list
