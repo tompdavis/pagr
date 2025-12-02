@@ -8,13 +8,18 @@ def display_portfolio_metrics(portfolio: Portfolio):
     """Display portfolio summary metrics in 3-column layout."""
     col1, col2, col3 = st.columns(3)
 
-    # Total portfolio book value
+    # Total portfolio value (Market Value)
     with col1:
         total_value = portfolio.total_value if hasattr(portfolio, 'total_value') else 0.0
-        if total_value is None:
+        # If total_value is None or 0, try to sum book values as fallback
+        if not total_value:
             total_value = sum(p.book_value for p in portfolio.positions)
+            label = "Total Book Value"
+        else:
+            label = "Total Market Value"
+            
         st.metric(
-            "Total Book Value",
+            label,
             f"${total_value:,.2f}" if total_value else "$0.00"
         )
 

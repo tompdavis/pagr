@@ -22,7 +22,7 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
             "Ticker": pos.ticker,
             "Quantity": pos.quantity,
             "Book Value": f"${book_value:,.2f}",
-            "Market Value": f"${market_value:,.2f}" if market_value else "N/A",
+            "Market Value (Last Close)": f"${market_value:,.2f}" if market_value else "N/A",
             "Weight (%)": f"{weight:.2f}%" if weight else "N/A",
             "Type": security_type,
         })
@@ -41,8 +41,25 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                 sector_data = [dict(record) for record in sector_result.records]
                 sector_df = pd.DataFrame(sector_data)
 
+                # Format columns for display
+                display_df = sector_df.copy()
+                if 'total_exposure' in display_df.columns:
+                    display_df['total_exposure'] = display_df['total_exposure'].apply(lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00")
+                if 'total_weight' in display_df.columns:
+                    display_df['total_weight'] = display_df['total_weight'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "0.00%")
+                
+                # Remove num_positions and rename columns
+                if 'num_positions' in display_df.columns:
+                    display_df = display_df.drop(columns=['num_positions'])
+                
+                display_df = display_df.rename(columns={
+                    'sector': 'Sector',
+                    'total_exposure': 'Exposure',
+                    'total_weight': 'Weight'
+                })
+
                 # Display table
-                st.dataframe(sector_df, use_container_width=True, hide_index=True)
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
 
                 # Display chart
                 if 'sector' in sector_df.columns and 'total_exposure' in sector_df.columns:
@@ -50,8 +67,8 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                         sector_df,
                         x='sector',
                         y='total_exposure',
-                        title='Exposure by Sector',
-                        labels={'total_exposure': 'Exposure ($)', 'sector': 'Sector'}
+                        title='Exposure by Sector (Market Value)',
+                        labels={'total_exposure': 'Market Exposure ($)', 'sector': 'Sector'}
                     )
                     fig.update_layout(
                         height=400,
@@ -78,8 +95,22 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                 country_data = [dict(record) for record in country_result.records]
                 country_df = pd.DataFrame(country_data)
 
+                # Format columns for display
+                display_country_df = country_df.copy()
+                if 'exposure' in display_country_df.columns:
+                    display_country_df['exposure'] = display_country_df['exposure'].apply(lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00")
+                
+                # Remove num_positions and rename columns
+                if 'num_positions' in display_country_df.columns:
+                    display_country_df = display_country_df.drop(columns=['num_positions'])
+                
+                display_country_df = display_country_df.rename(columns={
+                    'company': 'Company',
+                    'exposure': 'Exposure'
+                })
+
                 # Display table
-                st.dataframe(country_df, use_container_width=True, hide_index=True)
+                st.dataframe(display_country_df, use_container_width=True, hide_index=True)
 
                 # Display chart
                 if 'company' in country_df.columns and 'exposure' in country_df.columns:
@@ -87,8 +118,8 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                         country_df,
                         x='company',
                         y='exposure',
-                        title=f'Exposure to {selected_country}',
-                        labels={'exposure': 'Exposure ($)', 'company': 'Company'}
+                        title=f'Exposure to {selected_country} (Market Value)',
+                        labels={'exposure': 'Market Exposure ($)', 'company': 'Company'}
                     )
                     fig.update_layout(height=400, showlegend=False)
                     st.plotly_chart(fig, use_container_width=True)

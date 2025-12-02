@@ -177,7 +177,10 @@ class ETLManager:
             )
 
             # Execute ETL pipeline
-            statements, stats = pipeline.execute(tmp_path)
+            portfolio, statements, stats = pipeline.execute(tmp_path)
+
+            if not portfolio:
+                raise Exception("Failed to load portfolio")
 
             # Execute graph statements in Memgraph
             if statements:
@@ -188,9 +191,6 @@ class ETLManager:
                     except Exception as e:
                         logger.warning(f"Statement execution error: {e}")
                         stats.errors.append(str(e))
-
-            # Load portfolio from CSV
-            portfolio = portfolio_loader.load(tmp_path)
 
             logger.info(f"Pipeline complete: {stats.positions_loaded} positions, "
                        f"{stats.companies_enriched} companies enriched")

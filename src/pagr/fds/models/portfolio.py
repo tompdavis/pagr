@@ -66,19 +66,41 @@ class Portfolio(BaseModel):
     total_value: Optional[float] = Field(default=None, description="Total portfolio value")
 
     def calculate_weights(self) -> None:
-        """Calculate portfolio weights for each position based on book value."""
+        """Calculate portfolio weights.
+
+        Uses market_value if available for positions, otherwise falls back to book_value.
+        """
         if not self.positions:
             self.total_value = 0
             return
 
-        self.total_value = sum(p.book_value for p in self.positions)
+        # Check if we should use market value (if at least one position has it)
+        # Ideally we want all, but we'll sum what we have
+        has_market_value = any(p.market_value is not None for p in self.positions)
 
-        if self.total_value > 0:
-            for position in self.positions:
-                position.weight = (position.book_value / self.total_value) * 100
+        if has_market_value:
+            # Use market value where available, fallback to book_value?
+            # Mixing them is dangerous. Let's assume if we have market values we use them.
+            # If a position is missing market value, it contributes 0 to total market value.
+            self.total_value = sum((p.market_value or 0.0) for p in self.positions)
+            
+            if self.total_value > 0:
+                for position in self.positions:
+                    val = position.market_value or 0.0
+                    position.weight = (val / self.total_value) * 100
+            else:
+                for position in self.positions:
+                    position.weight = 0
         else:
-            for position in self.positions:
-                position.weight = 0
+            # Fallback to book value
+            self.total_value = sum(p.book_value for p in self.positions)
+
+            if self.total_value > 0:
+                for position in self.positions:
+                    position.weight = (position.book_value / self.total_value) * 100
+            else:
+                for position in self.positions:
+                    position.weight = 0
 
     def add_position(self, position: Position) -> None:
         """Add a position to the portfolio.

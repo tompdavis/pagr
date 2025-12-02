@@ -299,14 +299,62 @@ class ETLPipeline:
             self.stats.add_error(error_msg)
             return []
 
-    def execute(self, portfolio_file: str) -> Tuple[List[str], PipelineStatistics]:
+    def enrich_prices(self, portfolio: Portfolio) -> None:
+        """Enrich portfolio positions with market prices.
+
+        Args:
+            portfolio: Portfolio to enrich
+        """
+        tickers = [p.ticker for p in portfolio.positions]
+        if not tickers:
+            return
+
+        logger.info(f"Enriching prices for {len(tickers)} positions")
+        try:
+            response = self.factset_client.get_last_close_prices(tickers)
+            
+            # Map ticker -> (date, price)
+            price_map = {}
+            if "data" in response:
+                for item in response["data"]:
+                    ticker = item.get("requestId")
+                    price = item.get("price")
+                    date_str = item.get("date")
+                    
+                    if ticker and price is not None and date_str:
+                        # If we already have a price for this ticker, check if this one is newer
+                        if ticker in price_map:
+                            existing_date, _ = price_map[ticker]
+                            if date_str > existing_date:
+                                price_map[ticker] = (date_str, float(price))
+                        else:
+                            price_map[ticker] = (date_str, float(price))
+            
+            # Update positions
+            updated_count = 0
+            for position in portfolio.positions:
+                if position.ticker in price_map:
+                    _, price = price_map[position.ticker]
+                    position.market_value = position.quantity * price
+                    updated_count += 1
+            
+            logger.info(f"Updated market values for {updated_count} positions")
+            
+            # Recalculate weights
+            portfolio.calculate_weights()
+            
+        except Exception as e:
+            logger.error(f"Failed to enrich prices: {e}")
+            self.stats.add_error(f"Price enrichment failed: {e}")
+
+    def execute(self, portfolio_file: str) -> Tuple[Optional[Portfolio], List[str], PipelineStatistics]:
         """Execute full ETL pipeline.
 
         Args:
             portfolio_file: Path to portfolio CSV file
 
         Returns:
-            Tuple of (Cypher statements, statistics)
+            Tuple of (Portfolio, Cypher statements, statistics)
         """
         logger.info("=" * 70)
         logger.info("Starting ETL Pipeline")
@@ -316,12 +364,15 @@ class ETLPipeline:
         portfolio = self.load_portfolio(portfolio_file)
         if not portfolio:
             logger.error("Pipeline failed: Could not load portfolio")
-            return [], self.stats
+            return None, [], self.stats
 
-        # Step 2: Enrich positions
+        # Step 2: Enrich prices
+        self.enrich_prices(portfolio)
+
+        # Step 3: Enrich positions (company data)
         companies, countries, executives = self.enrich_positions(portfolio.positions)
 
-        # Step 3: Build graph
+        # Step 4: Build graph
         statements = self.build_graph(portfolio, companies, countries, executives)
 
         logger.info("=" * 70)
@@ -329,7 +380,7 @@ class ETLPipeline:
         logger.info("=" * 70)
         logger.info(f"Statistics: {self.stats.to_dict()}")
 
-        return statements, self.stats
+        return portfolio, statements, self.stats
 
     def reset(self) -> None:
         """Reset pipeline state for new execution."""

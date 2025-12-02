@@ -95,6 +95,8 @@ class GraphBuilder:
                 else ""
             )
 
+            market_value_clause = f", market_value: {pos.market_value}" if pos.market_value is not None else ""
+
             position_query = (
                 f"CREATE (pos_{ticker_var}:Position {{"
                 f"ticker: '{ticker}', "
@@ -102,6 +104,7 @@ class GraphBuilder:
                 f"security_type: '{security_type}', "
                 f"weight: {weight}"
                 f"{isin}{cusip}{cost_basis}{purchase_date}"
+                f"{market_value_clause}"
                 f"}}) "
                 f"RETURN pos_{ticker_var};"
             )

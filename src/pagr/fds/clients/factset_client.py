@@ -254,6 +254,34 @@ class FactSetClient:
             json_data={"ids": entity_ids},
         )
 
+    def get_last_close_prices(self, tickers: list[str]) -> dict:
+        """Fetch last close prices for tickers.
+
+        Args:
+            tickers: List of tickers
+
+        Returns:
+            API response with prices
+        """
+        from datetime import datetime, timedelta
+        
+        # Fetch last 5 days to ensure we get a closing price
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+        
+        logger.info(f"Fetching prices for {len(tickers)} tickers from {start_date} to {end_date}")
+        
+        return self._make_request(
+            "POST",
+            "/content/factset-global-prices/v1/prices",
+            json_data={
+                "ids": tickers,
+                "frequency": "D",
+                "startDate": start_date,
+                "endDate": end_date
+            },
+        )
+
     @staticmethod
     def from_credentials_file(
         credentials_file: str = "fds-api.key",
