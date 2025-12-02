@@ -88,7 +88,7 @@ class GraphBuilder:
             # Create position node
             isin = f", isin: '{self._escape_string(pos.isin)}'" if pos.isin else ""
             cusip = f", cusip: '{self._escape_string(pos.cusip)}'" if pos.cusip else ""
-            cost_basis = f", cost_basis: {pos.cost_basis}" if pos.cost_basis else ""
+            cost_basis = f", cost_basis: {pos.book_value}" if pos.book_value else ""
             purchase_date = (
                 f", purchase_date: '{self._escape_string(pos.purchase_date)}'"
                 if pos.purchase_date
@@ -99,7 +99,6 @@ class GraphBuilder:
                 f"CREATE (pos_{ticker_var}:Position {{"
                 f"ticker: '{ticker}', "
                 f"quantity: {quantity}, "
-                f"market_value: {market_value}, "
                 f"security_type: '{security_type}', "
                 f"weight: {weight}"
                 f"{isin}{cusip}{cost_basis}{purchase_date}"

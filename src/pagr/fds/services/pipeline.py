@@ -147,8 +147,8 @@ class ETLPipeline:
                     # Enrich executives for this company
                     try:
                         company_executives = company_enricher.enrich_executives(company.fibo_id)
-                        for exec_id, exec_obj in company_executives.items():
-                            executives[exec_id] = exec_obj
+                        for exec_obj in company_executives:
+                            executives[exec_obj.fibo_id] = exec_obj
                             self.stats.executives_enriched += 1
                         logger.debug(
                             f"  Enriched {len(company_executives)} executives"

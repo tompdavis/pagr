@@ -77,6 +77,9 @@ class CompanyEnricher:
             return company
 
         except Exception as e:
+            if "400 Client Error" in str(e):
+                logger.warning(f"Invalid ticker or bad request for {ticker}: {e}")
+                return None
             logger.error(f"Error enriching company for {ticker}: {e}")
             raise
 
