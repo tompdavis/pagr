@@ -1,0 +1,23 @@
+memgraph:
+  host: 127.0.0.1
+  port: 7687
+  username: ""
+  password: ""
+  encrypted: false
+
+factset:
+  credentials_file: "fds-api.key"
+  base_url: "https://api.factset.com"
+  rate_limit_rps: 10
+  timeout: 30
+  max_retries: 3
+
+fibo:
+  fetch_subsidiaries: true
+  fetch_executives: true
+  fetch_geography: true
+  fetch_supply_chain: false
+
+logging:
+  level: "INFO"
+  file: "logs/pagr.log"

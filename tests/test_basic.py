@@ -1,44 +1,92 @@
+"""Basic tests for PAGR components."""
+
 import pytest
-from pagr.portfolio import Portfolio
-from pagr.market_data import clean_ticker
-from pathlib import Path
+from pagr.fds.models.portfolio import Portfolio, Position
+from pagr.session_manager import SessionManager, PipelineStatistics
 
-def test_clean_ticker():
-    assert clean_ticker("BRK.B") == "BRK-B"
-    assert clean_ticker("AAPL") == "AAPL"
 
-def test_portfolio_loading(tmp_path):
-    # Create a dummy portfolio file
-    p_file = tmp_path / "test.pagr"
-    p_file.write_text("""
-    {
-        "portfolio_name": "Test Portfolio",
-        "currency": "USD",
-        "positions": [
-            { "ticker": "AAPL", "quantity": 10, "book_value": 1500.0 }
+class TestPortfolioModel:
+    """Test Portfolio and Position models from fds_api."""
+
+    def test_position_creation(self):
+        """Test creating a Position instance."""
+        pos = Position(
+            ticker="AAPL-US",
+            quantity=100.0,
+            book_value=19000.0,
+            security_type="Common Stock"
+        )
+        assert pos.ticker == "AAPL-US"
+        assert pos.quantity == 100.0
+        assert pos.book_value == 19000.0
+
+    def test_portfolio_creation(self):
+        """Test creating a Portfolio instance."""
+        positions = [
+            Position(ticker="AAPL-US", quantity=100.0, book_value=19000.0),
+            Position(ticker="MSFT-US", quantity=50.0, book_value=21000.0),
         ]
-    }
-    """)
-    
-    p = Portfolio.from_file(p_file)
-    assert p.name == "Test Portfolio"
-    assert len(p.positions) == 1
-    assert p.positions[0].ticker == "AAPL"
-    assert p.positions[0].quantity == 10
+        portfolio = Portfolio(name="Test Portfolio", positions=positions)
+        assert portfolio.name == "Test Portfolio"
+        assert len(portfolio.positions) == 2
 
-def test_portfolio_get_tickers(tmp_path):
-    p_file = tmp_path / "test.pagr"
-    p_file.write_text("""
-    {
-        "portfolio_name": "Test",
-        "positions": [
-            { "ticker": "AAPL", "quantity": 10, "book_value": 100 },
-            { "ticker": "MSFT", "quantity": 5, "book_value": 200 }
+    def test_portfolio_total_value(self):
+        """Test portfolio total book value calculation."""
+        positions = [
+            Position(ticker="AAPL-US", quantity=100.0, book_value=10000.0),
+            Position(ticker="MSFT-US", quantity=50.0, book_value=10000.0),
         ]
-    }
-    """)
-    p = Portfolio.from_file(p_file)
-    tickers = p.get_tickers()
-    assert "AAPL" in tickers
-    assert "MSFT" in tickers
-    assert len(tickers) == 2
+        portfolio = Portfolio(name="Test", positions=positions)
+        portfolio.calculate_weights()
+        expected_value = 20000.0
+        assert portfolio.total_value == expected_value
+
+
+class TestSessionManager:
+    """Test Streamlit session state management."""
+
+    def test_session_initialization(self):
+        """Test session state initialization."""
+        # Simulate Streamlit session
+        import streamlit as st
+        SessionManager.initialize()
+        assert st.session_state.portfolio is None
+        assert st.session_state.graph_built is False
+
+    def test_session_portfolio_operations(self):
+        """Test setting and getting portfolio from session."""
+        import streamlit as st
+        SessionManager.initialize()
+
+        portfolio = Portfolio(name="Test", positions=[])
+        stats = PipelineStatistics()
+
+        SessionManager.set_portfolio(portfolio, stats)
+        retrieved = SessionManager.get_portfolio()
+
+        assert retrieved is not None
+        assert retrieved.name == "Test"
+
+
+class TestPipelineStatistics:
+    """Test pipeline statistics data class."""
+
+    def test_statistics_creation(self):
+        """Test creating statistics instance."""
+        stats = PipelineStatistics(
+            positions_loaded=5,
+            companies_enriched=3,
+            executives_enriched=2
+        )
+        assert stats.positions_loaded == 5
+        assert stats.companies_enriched == 3
+        assert stats.executives_enriched == 2
+
+    def test_statistics_error_tracking(self):
+        """Test error tracking in statistics."""
+        stats = PipelineStatistics()
+        stats.errors.append("Test error 1")
+        stats.errors.append("Test error 2")
+
+        assert len(stats.errors) == 2
+        assert "Test error 1" in stats.errors

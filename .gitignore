@@ -9,6 +9,14 @@ wheels/
 # Virtual environments
 .venv
 
-# Setting information, could include api keys 
+# Setting information, could include api keys
 settings.env
+.env
+fds-api.key
 
+# Logs
+logs/
+*.log
+
+# Data cache
+data/cache/

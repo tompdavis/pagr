@@ -21,8 +21,6 @@ to create a knowledge graph.
 
 *   Create portfolio: Ability to create a portfolio from a file, a simple structure of stock ticker and quantity.  The quantity can be negative, denoting a short position.
     *   Feature described in CREATE.md
-*   Trade in/out: Ability to change a position to the portfolio, defined as either selling or buying a security.
-    *   Feature described in TRADE.md
 *   Display portfolio: A view of the portfolio and its current market value, with a "live/static" toggle.  When static, the portfolio doesn't change its value as the market data "ticks", but uses the last night's market close values.  
 *   Portfolio view: Initially, a chart showing the value of the portfolio broken down into sectors according to an abstracted sector classification.  This feature must be future-proof, meaning modular and extensible for future views.  
     *   Feature described in VIEW.md
@@ -51,15 +49,15 @@ The components are:
 *   Please use uv for dependencies, adding packages, managing virtual environments, syncing and running.  Don't start any development work without running `uv sync`
 
 There are some external APIs used, and they need to be configured and have the ability to choose between different providers
-1. Financial data: default is yahoo finance api 
+1. Financial data: use the facset developer api 
 2. LLM: default is a local install of ollama using llama3.1:8b on localhost port 11434
-3. News feed: TODO
-4. Sector classification: While I would like to use GICS, it's not clear whether this can be done consistently, so using an API to do this can provide an abstraction.  
+3. Sector classification: Use FIBO light, as per the fds_api project, with the schema found there 
+4. News feed: TODO
 
 ## Development Guidelines & Standards
 
 ### General Rules
-The application will be written in python 3.12.  The uv package manager will be used to add packages.  Prefer simple, composable, testable functions over complex classes when possible.  Write unit tests for every feature, and if big enough, every component of the feature. 
+The application will be written in python 3.12, if this is incompatible with the fds_api project, please use the lower of the two python version (i think 3.9).  The uv package manager will be used to add packages.  Prefer simple, composable, testable functions over complex classes when possible.  Write unit tests for every feature, and if big enough, every component of the feature. 
 
 ### Testing Requirements
 *   **T-1 (MUST)** Write tests for all new features and bug fixes.
@@ -77,32 +75,29 @@ The application will be written in python 3.12.  The uv package manager will be 
 ## Phases 
 
 ### Phase 1 
-*   Read in a portfolio from a .pagr file
-*   Implement the static portfolio view, using a financial API (initially yahoo finance api) to get last night's close for all the positions in the portfolio.
+*   Read in a portfolio from a .csv file.  In the future this will be from a facset proprietary database called ofdb, so keep this modular.
+*   Implement the static portfolio view, using factset API to get last night's close for all the positions in the portfolio.
 *   Have a simple portfolio view that is a table with security identifier, position size, market value of position, and sector classification. 
 
 ### Phase 2
-*   Have a button to "Trade In/Out" 
-
-### Phase 3
 *   Start using a memgraph database on localhost:7687
 *   When the portfolio is read from a file, create a memgraph database for queries about the portfolio
 *   All views should now be done by querying the database 
 
-### Phase 4 
+### Phase 3 
 *   Add LLM for the user to query database
 
-### Phase 5
+### Phase 4
 *  Create the scenario analysis  
 
 
 ### Future Phases
-*   Add FIBO ontology 
+*   Add trade in/out
 *   Live ticks 
 *   News feed 
 *   Foreign exchange handling 
 *   Book value for calculating returns 
 *   Trade blotter
 *   Cash management
-*   Multi-Asset Class
-    *   Derivatives
+*   Bonds
+*   Derivatives
