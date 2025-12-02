@@ -64,7 +64,8 @@ class Country(BaseModel):
     fibo_id: str = Field(..., description="Unique FIBO identifier")
     name: str = Field(..., description="Country name")
     iso_code: str = Field(..., description="ISO 3166-1 alpha-2 code")
-    region: Optional[str] = Field(default=None, description="Geographic region")
+    # TODO: Add region back in the future
+    # region: Optional[str] = Field(default=None, description="Geographic region")
 
 
 class Region(BaseModel):

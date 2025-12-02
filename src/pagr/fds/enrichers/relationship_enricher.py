@@ -10,30 +10,31 @@ logger = logging.getLogger(__name__)
 
 
 # Country mapping from company data to ISO codes
+# TODO: Add region back in the future
 COUNTRY_MAPPING = {
-    "United States": {"iso_code": "US", "region": "North America"},
-    "Taiwan": {"iso_code": "TW", "region": "Asia-Pacific"},
-    "Japan": {"iso_code": "JP", "region": "Asia-Pacific"},
-    "China": {"iso_code": "CN", "region": "Asia-Pacific"},
-    "South Korea": {"iso_code": "KR", "region": "Asia-Pacific"},
-    "Hong Kong": {"iso_code": "HK", "region": "Asia-Pacific"},
-    "Singapore": {"iso_code": "SG", "region": "Asia-Pacific"},
-    "India": {"iso_code": "IN", "region": "Asia-Pacific"},
-    "Australia": {"iso_code": "AU", "region": "Asia-Pacific"},
-    "Canada": {"iso_code": "CA", "region": "North America"},
-    "Mexico": {"iso_code": "MX", "region": "North America"},
-    "Brazil": {"iso_code": "BR", "region": "South America"},
-    "United Kingdom": {"iso_code": "GB", "region": "Europe"},
-    "Germany": {"iso_code": "DE", "region": "Europe"},
-    "France": {"iso_code": "FR", "region": "Europe"},
-    "Netherlands": {"iso_code": "NL", "region": "Europe"},
-    "Switzerland": {"iso_code": "CH", "region": "Europe"},
-    "Sweden": {"iso_code": "SE", "region": "Europe"},
-    "Norway": {"iso_code": "NO", "region": "Europe"},
-    "Denmark": {"iso_code": "DK", "region": "Europe"},
-    "Israel": {"iso_code": "IL", "region": "Middle East"},
-    "UAE": {"iso_code": "AE", "region": "Middle East"},
-    "Saudi Arabia": {"iso_code": "SA", "region": "Middle East"},
+    "United States": {"iso_code": "US"}, #, "region": "North America"},
+    "Taiwan": {"iso_code": "TW"}, #, "region": "Asia-Pacific"},
+    "Japan": {"iso_code": "JP"}, #, "region": "Asia-Pacific"},
+    "China": {"iso_code": "CN"}, #, "region": "Asia-Pacific"},
+    "South Korea": {"iso_code": "KR"}, #, "region": "Asia-Pacific"},
+    "Hong Kong": {"iso_code": "HK"}, #, "region": "Asia-Pacific"},
+    "Singapore": {"iso_code": "SG"}, #, "region": "Asia-Pacific"},
+    "India": {"iso_code": "IN"}, #, "region": "Asia-Pacific"},
+    "Australia": {"iso_code": "AU"}, #, "region": "Asia-Pacific"},
+    "Canada": {"iso_code": "CA"}, #, "region": "North America"},
+    "Mexico": {"iso_code": "MX"}, #, "region": "North America"},
+    "Brazil": {"iso_code": "BR"}, #, "region": "South America"},
+    "United Kingdom": {"iso_code": "GB"}, #, "region": "Europe"},
+    "Germany": {"iso_code": "DE"}, #, "region": "Europe"},
+    "France": {"iso_code": "FR"}, #, "region": "Europe"},
+    "Netherlands": {"iso_code": "NL"}, #, "region": "Europe"},
+    "Switzerland": {"iso_code": "CH"}, #, "region": "Europe"},
+    "Sweden": {"iso_code": "SE"}, #, "region": "Europe"},
+    "Norway": {"iso_code": "NO"}, #, "region": "Europe"},
+    "Denmark": {"iso_code": "DK"}, #, "region": "Europe"},
+    "Israel": {"iso_code": "IL"}, #, "region": "Middle East"},
+    "UAE": {"iso_code": "AE"}, #, "region": "Middle East"},
+    "Saudi Arabia": {"iso_code": "SA"}, #, "region": "Middle East"},
 }
 
 
@@ -81,7 +82,8 @@ class RelationshipEnricher:
                 fibo_id=f"fibo:country:{country_info['iso_code']}",
                 name=country_name,
                 iso_code=country_info["iso_code"],
-                region=country_info.get("region"),
+                # TODO: Add region back in the future
+                # region=country_info.get("region"),
             )
 
             # Create HEADQUARTERED_IN relationship

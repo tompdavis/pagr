@@ -97,27 +97,4 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
         except Exception as e:
             st.warning(f"Could not fetch country exposure: {str(e)[:100]}")
 
-    # Region Exposure
-    st.subheader("Region Exposure")
-    try:
-        region_result = query_service.region_exposure(portfolio.name)
-        if region_result and region_result.records:
-            region_data = [dict(record) for record in region_result.records]
-            region_df = pd.DataFrame(region_data)
 
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.dataframe(region_df, use_container_width=True, hide_index=True)
-            with col2:
-                if 'region' in region_df.columns and 'total_exposure' in region_df.columns:
-                    fig = px.pie(
-                        region_df,
-                        names='region',
-                        values='total_exposure',
-                        title='Portfolio by Region'
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No region data available.")
-    except Exception as e:
-        st.warning(f"Could not fetch region exposure: {str(e)[:100]}")

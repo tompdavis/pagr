@@ -172,15 +172,16 @@ class GraphBuilder:
             fibo_id = self._escape_string(country.fibo_id)
             name = self._escape_string(country.name)
             iso_clean = self._escape_string(iso_code)
-            region = self._escape_string(country.region) if country.region else ""
+            # TODO: Add region back in the future
+            # region = self._escape_string(country.region) if country.region else ""
 
-            region_clause = f", region: '{region}'" if region else ""
+            # region_clause = f", region: '{region}'" if region else ""
 
             query = (
                 f"MERGE (c:Country {{fibo_id: '{fibo_id}'}}) "
                 f"SET c.name = '{name}', "
                 f"c.iso_code = '{iso_clean}' "
-                f"{region_clause} "
+                # f"{region_clause} "
                 f"RETURN c;"
             )
             self.node_statements.append(query)

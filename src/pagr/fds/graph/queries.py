@@ -84,29 +84,30 @@ RETURN
 ORDER BY exposure DESC;
 """.strip()
 
-    @staticmethod
-    def region_exposure(portfolio_name: str, region_name: str) -> str:
-        """Query 2b: Exposure to a region.
-
-        Returns companies in the region.
-
-        Args:
-            portfolio_name: Name of portfolio
-            region_name: Name of region (e.g., 'Asia-Pacific')
-
-        Returns:
-            Cypher query string
-        """
-        return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
-      -[:HEADQUARTERED_IN]->(country:Country {{region: '{region_name}'}})
-RETURN
-    c.name AS company,
-    country.name AS country,
-    SUM(pos.market_value) AS exposure,
-    COUNT(pos) AS num_positions
-ORDER BY exposure DESC;
-""".strip()
+    # TODO: Add region back in the future
+    # @staticmethod
+    # def region_exposure(portfolio_name: str, region_name: str) -> str:
+    #     """Query 2b: Exposure to a region.
+    #
+    #     Returns companies in the region.
+    #
+    #     Args:
+    #         portfolio_name: Name of portfolio
+    #         region_name: Name of region (e.g., 'Asia-Pacific')
+    #
+    #     Returns:
+    #         Cypher query string
+    #     """
+    #     return f"""
+    # MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
+    #       -[:HEADQUARTERED_IN]->(country:Country {{region: '{region_name}'}})
+    # RETURN
+    #     c.name AS company,
+    #     country.name AS country,
+    #     SUM(pos.market_value) AS exposure,
+    #     COUNT(pos) AS num_positions
+    # ORDER BY exposure DESC;
+    # """.strip()
 
     @staticmethod
     def company_exposure(portfolio_name: str, company_name: str) -> str:
@@ -265,18 +266,19 @@ class QueryService:
         cypher = GraphQueries.country_exposure(portfolio_name, country_iso)
         return self.execute_query("country_exposure", cypher)
 
-    def region_exposure(self, portfolio_name: str, region_name: str) -> QueryResult:
-        """Execute region exposure query.
-
-        Args:
-            portfolio_name: Portfolio name
-            region_name: Region name
-
-        Returns:
-            QueryResult with region exposure data
-        """
-        cypher = GraphQueries.region_exposure(portfolio_name, region_name)
-        return self.execute_query("region_exposure", cypher)
+    # TODO: Add region back in the future
+    # def region_exposure(self, portfolio_name: str, region_name: str) -> QueryResult:
+    #     """Execute region exposure query.
+    #
+    #     Args:
+    #         portfolio_name: Portfolio name
+    #         region_name: Region name
+    #
+    #     Returns:
+    #         QueryResult with region exposure data
+    #     """
+    #     cypher = GraphQueries.region_exposure(portfolio_name, region_name)
+    #     return self.execute_query("region_exposure", cypher)
 
     def company_exposure(self, portfolio_name: str, company_name: str) -> QueryResult:
         """Execute company exposure query.
