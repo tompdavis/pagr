@@ -1,5 +1,6 @@
 """Graph visualization component using PyVis."""
 
+import json
 import streamlit as st
 import streamlit.components.v1 as components
 from pyvis.network import Network
@@ -16,9 +17,9 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
     col1, col2 = st.columns([3, 1])
 
     with col2:
-        show_executives = st.checkbox("Show Executives", value=False)
-        show_countries = st.checkbox("Show Countries", value=True)
-        show_subsidiaries = st.checkbox("Show Subsidiaries", value=False)
+        show_countries = st.checkbox("Show Countries", value=False)
+        show_executives = False
+        show_subsidiaries = False
 
     with col1:
         with st.spinner("Loading graph data..."):
@@ -52,9 +53,18 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                 records = memgraph_client.execute_query(query)
 
                 # Create network
-                net = Network(height="700px", width="100%", directed=True, physics=True)
-                net.physics.enabled = True
-                net.physics.stabilization.iterations = 200
+                net = Network(height="700px", width="100%", directed=True, cdn_resources='in_line')
+                
+                # Configure physics
+                physics_options = {
+                    "physics": {
+                        "enabled": True,
+                        "stabilization": {
+                            "iterations": 200
+                        }
+                    }
+                }
+                net.set_options(json.dumps(physics_options))
 
                 nodes_added = set()
                 edges_added = set()
@@ -125,10 +135,10 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                         if country_id not in nodes_added:
                             net.add_node(
                                 country_id,
-                                label=country.get('name', 'Country'),
+                                label=country.get('iso_code', 'Unknown'),
                                 color='#F38181',
                                 size=20,
-                                title=f"Country: {country.get('name', 'unknown')}"
+                                title=f"Country: {country.get('iso_code', 'unknown')}"
                             )
                             nodes_added.add(country_id)
 
@@ -188,7 +198,7 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                 html = net.generate_html()
 
                 # Write to temp file and display
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
                     f.write(html)
                     temp_path = f.name
 
