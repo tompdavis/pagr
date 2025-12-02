@@ -205,6 +205,79 @@ RETURN
     SUM(pos.market_value) AS total_exposure;
 """.strip()
 
+    @staticmethod
+    def sector_positions(portfolio_name: str, sector: str) -> str:
+        """Get all positions in a specific sector.
+
+        Returns positions issued by companies in the sector.
+
+        Args:
+            portfolio_name: Name of portfolio
+            sector: Sector name
+
+        Returns:
+            Cypher query string
+        """
+        return f"""
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})
+RETURN
+    c.ticker AS ticker,
+    c.name AS company,
+    pos.quantity AS quantity,
+    pos.market_value AS market_value,
+    pos.weight AS weight
+ORDER BY market_value DESC;
+""".strip()
+
+    @staticmethod
+    def country_breakdown(portfolio_name: str) -> str:
+        """Get portfolio breakdown by country.
+
+        Returns countries and their total exposure and weight.
+
+        Args:
+            portfolio_name: Name of portfolio
+
+        Returns:
+            Cypher query string
+        """
+        return f"""
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
+      -[:HEADQUARTERED_IN]->(country:Country)
+RETURN
+    country.iso_code AS country_code,
+    country.name AS country,
+    SUM(pos.market_value) AS total_exposure,
+    SUM(pos.weight) AS total_weight,
+    COUNT(pos) AS num_positions
+ORDER BY total_exposure DESC;
+""".strip()
+
+    @staticmethod
+    def country_positions(portfolio_name: str, country_iso: str) -> str:
+        """Get all positions in companies headquartered in a specific country.
+
+        Returns positions issued by companies in the country.
+
+        Args:
+            portfolio_name: Name of portfolio
+            country_iso: Country ISO code
+
+        Returns:
+            Cypher query string
+        """
+        return f"""
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
+      -[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
+RETURN
+    c.ticker AS ticker,
+    c.name AS company,
+    pos.quantity AS quantity,
+    pos.market_value AS market_value,
+    pos.weight AS weight
+ORDER BY market_value DESC;
+""".strip()
+
 
 class QueryService:
     """Service for executing graph queries."""
@@ -335,6 +408,44 @@ class QueryService:
         """
         cypher = GraphQueries.total_company_exposure(portfolio_name, company_ticker)
         return self.execute_query("total_company_exposure", cypher)
+
+    def sector_positions(self, portfolio_name: str, sector: str) -> QueryResult:
+        """Execute sector positions query.
+
+        Args:
+            portfolio_name: Portfolio name
+            sector: Sector name
+
+        Returns:
+            QueryResult with positions in the sector
+        """
+        cypher = GraphQueries.sector_positions(portfolio_name, sector)
+        return self.execute_query("sector_positions", cypher)
+
+    def country_breakdown(self, portfolio_name: str) -> QueryResult:
+        """Execute country breakdown query.
+
+        Args:
+            portfolio_name: Portfolio name
+
+        Returns:
+            QueryResult with country breakdown data
+        """
+        cypher = GraphQueries.country_breakdown(portfolio_name)
+        return self.execute_query("country_breakdown", cypher)
+
+    def country_positions(self, portfolio_name: str, country_iso: str) -> QueryResult:
+        """Execute country positions query.
+
+        Args:
+            portfolio_name: Portfolio name
+            country_iso: Country ISO code
+
+        Returns:
+            QueryResult with positions in the country
+        """
+        cypher = GraphQueries.country_positions(portfolio_name, country_iso)
+        return self.execute_query("country_positions", cypher)
 
     def format_result_table(self, result: QueryResult) -> str:
         """Format query result as ASCII table.
