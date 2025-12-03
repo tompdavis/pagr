@@ -7,14 +7,6 @@ from pagr.fds.models.portfolio import Portfolio
 from pagr.fds.graph.queries import QueryService
 
 
-def _pad_dataframe_to_height(df, max_rows=10):
-    """Pad dataframe with empty rows to ensure uniform table height."""
-    df_copy = df.copy()
-    while len(df_copy) < max_rows:
-        df_copy = pd.concat([df_copy, pd.DataFrame([{col: "" for col in df_copy.columns}])], ignore_index=True)
-    return df_copy
-
-
 def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
     """Display tabular view with positions and exposure analysis."""
     st.subheader("Positions")
@@ -67,7 +59,6 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                 })
 
                 st.write("**Sector Breakdown**")
-                display_df = _pad_dataframe_to_height(display_df, max_rows=10)
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
                 # Display sector breakdown chart
@@ -174,7 +165,6 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                 })
 
                 st.write("**Country Breakdown**")
-                display_country_df = _pad_dataframe_to_height(display_country_df, max_rows=10)
                 st.dataframe(display_country_df, use_container_width=True, hide_index=True)
 
                 # Display country breakdown chart
