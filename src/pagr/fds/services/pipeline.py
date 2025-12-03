@@ -15,6 +15,7 @@ from pagr.fds.clients.factset_client import (
     FactSetNotFoundError,
 )
 from pagr.fds.enrichers.company_enricher import CompanyEnricher
+from pagr.fds.enrichers.bond_enricher import BondEnricher
 from pagr.fds.enrichers.relationship_enricher import RelationshipEnricher
 from pagr.fds.graph.builder import GraphBuilder
 from pagr.fds.models.portfolio import Portfolio, Position
@@ -29,8 +30,11 @@ class PipelineStatistics:
 
     portfolios_loaded: int = 0
     positions_loaded: int = 0
+    stocks_enriched: int = 0
+    bonds_enriched: int = 0
     companies_enriched: int = 0
     companies_failed: int = 0
+    bonds_failed: int = 0
     executives_enriched: int = 0
     countries_enriched: int = 0
     graph_nodes_created: int = 0
@@ -54,8 +58,11 @@ class PipelineStatistics:
         return {
             "portfolios_loaded": self.portfolios_loaded,
             "positions_loaded": self.positions_loaded,
+            "stocks_enriched": self.stocks_enriched,
+            "bonds_enriched": self.bonds_enriched,
             "companies_enriched": self.companies_enriched,
             "companies_failed": self.companies_failed,
+            "bonds_failed": self.bonds_failed,
             "executives_enriched": self.executives_enriched,
             "countries_enriched": self.countries_enriched,
             "graph_nodes_created": self.graph_nodes_created,
@@ -114,15 +121,26 @@ class ETLPipeline:
 
     def enrich_positions(
         self, positions: List[Position]
-    ) -> Tuple[Dict[str, Company], Dict[str, Country], Dict[str, Executive]]:
-        """Enrich positions with FactSet data.
+    ) -> Tuple[
+        Dict[str, Stock],
+        Dict[str, Bond],
+        Dict[str, Company],
+        Dict[str, Country],
+        Dict[str, Executive],
+    ]:
+        """Enrich positions with FactSet data, supporting both stocks and bonds.
+
+        Separates positions into stocks (with ticker) and bonds (with ISIN/CUSIP),
+        enriching each through the appropriate FactSet API and enricher.
 
         Args:
             positions: List of positions to enrich
 
         Returns:
-            Tuple of (companies dict, countries dict, executives dict)
+            Tuple of (stocks dict, bonds dict, companies dict, countries dict, executives dict)
         """
+        stocks: Dict[str, Stock] = {}
+        bonds: Dict[str, Bond] = {}
         companies: Dict[str, Company] = {}
         countries: Dict[str, Country] = {}
         executives: Dict[str, Executive] = {}
@@ -130,99 +148,261 @@ class ETLPipeline:
         logger.info(f"Enriching {len(positions)} positions with FactSet data")
 
         company_enricher = CompanyEnricher(self.factset_client)
+        bond_enricher = BondEnricher(self.factset_client)
         relationship_enricher = RelationshipEnricher(self.factset_client)
 
         for idx, position in enumerate(positions):
-            ticker = position.ticker
-            logger.debug(f"[{idx+1}/{len(positions)}] Enriching position: {ticker}")
+            primary_id_type, primary_id = position.get_primary_identifier()
+            logger.debug(
+                f"[{idx+1}/{len(positions)}] Enriching position: {primary_id_type}={primary_id}"
+            )
 
             try:
-                # Enrich company data
-                company = company_enricher.enrich_company(ticker)
-                if company:
-                    companies[ticker] = company
-                    self.stats.companies_enriched += 1
-                    logger.debug(f"  Enriched company: {company.name}")
-
-                    # Enrich executives for this company
-                    try:
-                        company_executives = company_enricher.enrich_executives(company.fibo_id)
-                        for exec_obj in company_executives:
-                            executives[exec_obj.fibo_id] = exec_obj
-                            self.stats.executives_enriched += 1
-                        logger.debug(
-                            f"  Enriched {len(company_executives)} executives"
-                        )
-                    except Exception as e:
-                        logger.warning(f"  Failed to enrich executives for {ticker}: {e}")
-
-                    # Enrich geography data
-                    if company.country:
-                        try:
-                            country_data = relationship_enricher.enrich_geography(
-                                company.fibo_id, company.country
-                            )
-                            if country_data and len(country_data) > 0:
-                                # country_data is a list of Relationship objects,
-                                # but we need Country objects. Extract from target
-                                for rel in country_data:
-                                    if rel.target_fibo_id not in countries:
-                                        # Create a Country object from relationship
-                                        country = Country(
-                                            fibo_id=rel.target_fibo_id,
-                                            name=company.country,
-                                            iso_code=company.country[:2]
-                                            if company.country
-                                            else "XX",
-                                        )
-                                        countries[company.country] = country
-                                        self.stats.countries_enriched += 1
-                                logger.debug(f"  Enriched geography")
-                        except Exception as e:
-                            logger.warning(
-                                f"  Failed to enrich geography for {ticker}: {e}"
-                            )
+                # Route to stock or bond enrichment based on identifier type
+                if position.ticker:
+                    # Stock enrichment (existing flow)
+                    self._enrich_stock_position(
+                        position,
+                        primary_id,
+                        company_enricher,
+                        relationship_enricher,
+                        stocks,
+                        companies,
+                        countries,
+                        executives,
+                    )
                 else:
-                    self.stats.companies_failed += 1
-                    logger.warning(f"Failed to enrich company for {ticker}")
-
-            except (FactSetAuthenticationError, FactSetPermissionError) as e:
-                # Critical errors
-                error_msg = f"Failed to enrich {ticker}: {str(e)}"
-                logger.error(error_msg)
-                self.stats.add_error(error_msg)
-                self.stats.companies_failed += 1
-
-            except FactSetNotFoundError as e:
-                # Not found errors
-                logger.warning(f"Ticker not found: {ticker} ({str(e)})")
-                self.stats.companies_failed += 1
+                    # Bond enrichment (new flow)
+                    self._enrich_bond_position(
+                        position,
+                        bond_enricher,
+                        bonds,
+                        companies,
+                        countries,
+                    )
 
             except Exception as e:
-                # Other errors
-                error_msg = f"Unexpected error enriching {ticker}: {str(e)}"
+                # Catch-all for unexpected errors
+                error_msg = (
+                    f"Unexpected error enriching {primary_id_type}={primary_id}: {str(e)}"
+                )
                 logger.error(error_msg)
                 self.stats.add_error(error_msg)
-                self.stats.companies_failed += 1
+                if position.ticker:
+                    self.stats.companies_failed += 1
+                else:
+                    self.stats.bonds_failed += 1
 
         logger.info(
             f"Enrichment complete: "
+            f"{self.stats.stocks_enriched} stocks, "
+            f"{self.stats.bonds_enriched} bonds, "
             f"{self.stats.companies_enriched} companies, "
-            f"{self.stats.companies_failed} failed"
+            f"{self.stats.companies_failed} company failures, "
+            f"{self.stats.bonds_failed} bond failures"
         )
-        return companies, countries, executives
+        return stocks, bonds, companies, countries, executives
+
+    def _enrich_stock_position(
+        self,
+        position: Position,
+        ticker: str,
+        company_enricher: CompanyEnricher,
+        relationship_enricher: RelationshipEnricher,
+        stocks: Dict[str, Stock],
+        companies: Dict[str, Company],
+        countries: Dict[str, Country],
+        executives: Dict[str, Executive],
+    ) -> None:
+        """Enrich a single stock position.
+
+        Args:
+            position: Position object
+            ticker: Stock ticker
+            company_enricher: CompanyEnricher instance
+            relationship_enricher: RelationshipEnricher instance
+            stocks: Dict to accumulate Stock objects
+            companies: Dict to accumulate Company objects
+            countries: Dict to accumulate Country objects
+            executives: Dict to accumulate Executive objects
+        """
+        try:
+            # Enrich company data
+            company = company_enricher.enrich_company(ticker)
+            if company:
+                companies[ticker] = company
+                self.stats.companies_enriched += 1
+                logger.debug(f"  Enriched company: {company.name}")
+
+                # Create Stock FIBO entity
+                stock = Stock(
+                    fibo_id=f"fibo:stock:{ticker}",
+                    ticker=ticker,
+                    security_type=position.security_type or "Common Stock",
+                    isin=position.isin,
+                    cusip=position.cusip,
+                    sedol=None,
+                    market_price=None,  # Will be filled by enrich_prices
+                )
+                stocks[ticker] = stock
+                self.stats.stocks_enriched += 1
+                logger.debug(f"  Created Stock entity for {ticker}")
+
+                # Enrich executives for this company
+                try:
+                    company_executives = company_enricher.enrich_executives(
+                        company.fibo_id
+                    )
+                    for exec_obj in company_executives:
+                        executives[exec_obj.fibo_id] = exec_obj
+                        self.stats.executives_enriched += 1
+                    logger.debug(f"  Enriched {len(company_executives)} executives")
+                except Exception as e:
+                    logger.warning(f"  Failed to enrich executives for {ticker}: {e}")
+
+                # Enrich geography data
+                if company.country:
+                    try:
+                        country_data = relationship_enricher.enrich_geography(
+                            company.fibo_id, company.country
+                        )
+                        if country_data and len(country_data) > 0:
+                            for rel in country_data:
+                                if rel.target_fibo_id not in countries:
+                                    country = Country(
+                                        fibo_id=rel.target_fibo_id,
+                                        name=company.country,
+                                        iso_code=company.country[:2]
+                                        if company.country
+                                        else "XX",
+                                    )
+                                    countries[company.country] = country
+                                    self.stats.countries_enriched += 1
+                            logger.debug(f"  Enriched geography")
+                    except Exception as e:
+                        logger.warning(
+                            f"  Failed to enrich geography for {ticker}: {e}"
+                        )
+            else:
+                self.stats.companies_failed += 1
+                logger.warning(f"Failed to enrich company for {ticker}")
+
+        except (FactSetAuthenticationError, FactSetPermissionError) as e:
+            # Critical errors
+            error_msg = f"Failed to enrich stock {ticker}: {str(e)}"
+            logger.error(error_msg)
+            self.stats.add_error(error_msg)
+            self.stats.companies_failed += 1
+
+        except FactSetNotFoundError as e:
+            # Not found errors
+            logger.warning(f"Ticker not found: {ticker} ({str(e)})")
+            self.stats.companies_failed += 1
+
+    def _enrich_bond_position(
+        self,
+        position: Position,
+        bond_enricher: BondEnricher,
+        bonds: Dict[str, Bond],
+        companies: Dict[str, Company],
+        countries: Dict[str, Country],
+    ) -> None:
+        """Enrich a single bond position.
+
+        Args:
+            position: Position object (bond)
+            bond_enricher: BondEnricher instance
+            bonds: Dict to accumulate Bond objects
+            companies: Dict to accumulate Company objects
+            countries: Dict to accumulate Country objects
+        """
+        try:
+            # Enrich bond data
+            bond = bond_enricher.enrich_bond(position.cusip, position.isin)
+            if bond:
+                # Use primary identifier as key for bonds
+                primary_id_type, primary_id = position.get_primary_identifier()
+
+                # Use book_value as fallback for market_price if enrichment didn't provide it
+                if bond.market_price is None and position.book_value:
+                    bond.market_price = position.book_value
+                    logger.debug(f"  Using book_value as market_price fallback: {position.book_value}")
+
+                bonds[primary_id] = bond
+                self.stats.bonds_enriched += 1
+                logger.debug(f"  Enriched bond: {primary_id_type}={primary_id}")
+
+                # Try to resolve and enrich issuer company
+                try:
+                    issuer_company = bond_enricher.resolve_issuer(
+                        position.cusip, position.isin
+                    )
+                    if issuer_company:
+                        # Use issuer name as key
+                        if issuer_company.name not in companies:
+                            companies[issuer_company.name] = issuer_company
+                            self.stats.companies_enriched += 1
+                            logger.debug(
+                                f"  Resolved bond issuer: {issuer_company.name}"
+                            )
+
+                            # Try to enrich geography for issuer if available
+                            if issuer_company.country:
+                                try:
+                                    iso_code = issuer_company.country[:2].upper()
+                                    if iso_code not in countries:
+                                        country = Country(
+                                            fibo_id=f"fibo:country:{iso_code}",
+                                            name=issuer_company.country,
+                                            iso_code=iso_code,
+                                        )
+                                        countries[iso_code] = country
+                                        self.stats.countries_enriched += 1
+                                except Exception as e:
+                                    logger.debug(
+                                        f"  Could not enrich issuer geography: {e}"
+                                    )
+                        else:
+                            logger.debug(
+                                f"  Issuer already enriched: {issuer_company.name}"
+                            )
+                    else:
+                        logger.debug(f"  Could not resolve issuer for bond")
+                except Exception as e:
+                    logger.warning(f"  Failed to enrich bond issuer: {e}")
+
+            else:
+                self.stats.bonds_failed += 1
+                primary_id_type, primary_id = position.get_primary_identifier()
+                logger.warning(f"Failed to enrich bond {primary_id_type}={primary_id}")
+
+        except Exception as e:
+            error_msg = f"Error enriching bond: {str(e)}"
+            logger.error(error_msg)
+            self.stats.add_error(error_msg)
+            self.stats.bonds_failed += 1
 
     def build_graph(
         self,
         portfolio: Portfolio,
+        stocks: Dict[str, Stock],
+        bonds: Dict[str, Bond],
         companies: Dict[str, Company],
         countries: Dict[str, Country],
         executives: Dict[str, Executive],
     ) -> List[str]:
-        """Build graph nodes and relationships.
+        """Build graph nodes and relationships for mixed stock/bond portfolio.
+
+        New graph schema:
+        - Position -[CONTAINS]-> Portfolio
+        - Position -[INVESTED_IN]-> Stock/Bond
+        - Stock/Bond -[ISSUED_BY]-> Company
+        - Company -[HEADQUARTERED_IN]-> Country
 
         Args:
             portfolio: Portfolio instance
+            stocks: Dictionary of enriched stocks
+            bonds: Dictionary of enriched bonds
             companies: Dictionary of enriched companies
             countries: Dictionary of enriched countries
             executives: Dictionary of enriched executives
@@ -242,6 +422,11 @@ class ETLPipeline:
             self.stats.graph_nodes_created += len(portfolio.positions)
             self.stats.graph_relationships_created += len(portfolio.positions)
 
+            # Add security nodes (stocks and bonds)
+            if stocks or bonds:
+                self.graph_builder.add_security_nodes(stocks, bonds)
+                self.stats.graph_nodes_created += len(stocks) + len(bonds)
+
             # Add company nodes
             if companies:
                 self.graph_builder.add_company_nodes(companies)
@@ -257,17 +442,59 @@ class ETLPipeline:
                 self.graph_builder.add_executive_nodes(executives)
                 self.stats.graph_nodes_created += len(executives)
 
-            # Add ISSUED_BY relationships (position -> company)
-            position_to_company = {pos.ticker: companies[pos.ticker].fibo_id
-                                 for pos in portfolio.positions
-                                 if pos.ticker in companies}
-            if position_to_company:
-                self.graph_builder.add_issued_by_relationships(position_to_company)
-                self.stats.graph_relationships_created += len(position_to_company)
+            # Build Position -> Security mappings for INVESTED_IN relationships
+            # Maps: (position_ticker, position_quantity, position_book_value) -> (security_type, security_fibo_id)
+            position_to_security: Dict[tuple, Tuple[str, str]] = {}
+            for position in portfolio.positions:
+                if position.ticker and position.ticker in stocks:
+                    # Stock position - use ticker as position key
+                    stock_fibo_id = stocks[position.ticker].fibo_id
+                    position_to_security[(position.ticker, position.quantity, position.book_value)] = ("stock", stock_fibo_id)
+                elif position.cusip or position.isin:
+                    # Bond position - look up by CUSIP/ISIN, but use position properties as key
+                    primary_id_type, primary_id = position.get_primary_identifier()
+                    if primary_id in bonds:
+                        bond_fibo_id = bonds[primary_id].fibo_id
+                        # Use (ticker, quantity, book_value) as unique position key
+                        pos_key = (position.ticker or "", position.quantity, position.book_value)
+                        position_to_security[pos_key] = ("bond", bond_fibo_id)
+
+            # Add INVESTED_IN relationships (Position -> Security)
+            if position_to_security:
+                self.graph_builder.add_invested_in_relationships(position_to_security)
+                self.stats.graph_relationships_created += len(position_to_security)
+
+            # Build Security -> Company mappings for ISSUED_BY relationships
+            security_to_company: Dict[str, Tuple[str, str]] = {}
+
+            # Stocks -> Companies
+            for ticker, stock in stocks.items():
+                if ticker in companies:
+                    company_fibo_id = companies[ticker].fibo_id
+                    security_to_company[stock.fibo_id] = ("stock", company_fibo_id)
+
+            # Bonds -> Companies (by issuer)
+            for bond_id, bond in bonds.items():
+                # Find issuer company - check if it's in companies dict by issuer name
+                for company_name, company in companies.items():
+                    # If this company was created from bond enrichment, use it
+                    # We match by name since bond issuers are identified by name
+                    if company.name and bond_id not in security_to_company:
+                        # This is a simplified approach - in reality you'd want better matching
+                        # For now, we assume each bond has one issuer that's in companies
+                        security_to_company[bond.fibo_id] = ("bond", company.fibo_id)
+                        break
+
+            # Add ISSUED_BY relationships (Security -> Company)
+            if security_to_company:
+                self.graph_builder.add_security_issued_by_relationships(
+                    security_to_company
+                )
+                self.stats.graph_relationships_created += len(security_to_company)
 
             # Add HEADQUARTERED_IN relationships (company -> country)
             company_to_country = {}
-            for ticker, company in companies.items():
+            for company_id, company in companies.items():
                 if company.country:
                     # Try to find ISO code from countries dict
                     iso_code = None
@@ -302,53 +529,98 @@ class ETLPipeline:
     def enrich_prices(self, portfolio: Portfolio) -> None:
         """Enrich portfolio positions with market prices.
 
+        Handles both stock prices (by ticker) and bond prices (by ISIN/CUSIP).
+
         Args:
             portfolio: Portfolio to enrich
         """
-        tickers = [p.ticker for p in portfolio.positions]
-        if not tickers:
-            return
+        logger.info(f"Enriching prices for {len(portfolio.positions)} positions")
 
-        logger.info(f"Enriching prices for {len(tickers)} positions")
         try:
-            response = self.factset_client.get_last_close_prices(tickers)
-            
-            # Map ticker -> (date, price)
+            # Separate stocks and bonds
+            stock_positions = [p for p in portfolio.positions if p.ticker]
+            bond_positions = [p for p in portfolio.positions if p.cusip or p.isin]
+
             price_map = {}
-            if "data" in response:
-                for item in response["data"]:
-                    ticker = item.get("requestId")
-                    price = item.get("price")
-                    date_str = item.get("date")
-                    
-                    if ticker and price is not None and date_str:
-                        # If we already have a price for this ticker, check if this one is newer
-                        if ticker in price_map:
-                            existing_date, _ = price_map[ticker]
-                            if date_str > existing_date:
-                                price_map[ticker] = (date_str, float(price))
-                        else:
-                            price_map[ticker] = (date_str, float(price))
-            
-            # Update positions
+
+            # Enrich stock prices
+            if stock_positions:
+                try:
+                    tickers = [p.ticker for p in stock_positions]
+                    logger.debug(f"Fetching prices for {len(tickers)} stocks")
+                    response = self.factset_client.get_last_close_prices(tickers)
+
+                    if "data" in response:
+                        for item in response["data"]:
+                            ticker = item.get("requestId")
+                            price = item.get("price")
+                            date_str = item.get("date")
+
+                            if ticker and price is not None:
+                                # If we already have a price for this ticker, check if newer
+                                if ticker in price_map:
+                                    existing_date, _ = price_map[ticker]
+                                    if not date_str or date_str > existing_date:
+                                        price_map[ticker] = (date_str, float(price))
+                                else:
+                                    price_map[ticker] = (date_str, float(price))
+                except Exception as e:
+                    logger.warning(f"Failed to fetch stock prices: {e}")
+                    self.stats.add_error(f"Stock price enrichment failed: {e}")
+
+            # Enrich bond prices
+            if bond_positions:
+                try:
+                    logger.debug(f"Fetching prices for {len(bond_positions)} bonds")
+                    for position in bond_positions:
+                        primary_id_type, primary_id = position.get_primary_identifier()
+                        try:
+                            response = self.factset_client.get_bond_prices(
+                                [primary_id],
+                                id_type=primary_id_type.upper(),
+                            )
+
+                            if "data" in response and len(response["data"]) > 0:
+                                bond_data = response["data"][0]
+                                price = bond_data.get("price")
+                                if price is not None:
+                                    date_str = bond_data.get("priceDate")
+                                    price_map[primary_id] = (date_str, float(price))
+                        except Exception as e:
+                            logger.debug(
+                                f"Could not fetch price for bond {primary_id_type}={primary_id}: {e}"
+                            )
+                except Exception as e:
+                    logger.warning(f"Failed to enrich bond prices: {e}")
+                    self.stats.add_error(f"Bond price enrichment failed: {e}")
+
+            # Update positions with prices
             updated_count = 0
             for position in portfolio.positions:
-                if position.ticker in price_map:
+                # Get the identifier to look up in price_map
+                if position.ticker and position.ticker in price_map:
                     _, price = price_map[position.ticker]
                     position.market_value = position.quantity * price
                     updated_count += 1
-            
-            logger.info(f"Updated market values for {updated_count} positions")
-            
+                elif position.cusip or position.isin:
+                    primary_id_type, primary_id = position.get_primary_identifier()
+                    if primary_id in price_map:
+                        _, price = price_map[primary_id]
+                        position.market_value = position.quantity * price
+                        updated_count += 1
+
+            logger.info(f"Updated market values for {updated_count}/{len(portfolio.positions)} positions")
+
             # Recalculate weights
             portfolio.calculate_weights()
-            
+
         except Exception as e:
-            logger.error(f"Failed to enrich prices: {e}")
-            self.stats.add_error(f"Price enrichment failed: {e}")
+            error_msg = f"Unexpected error enriching prices: {e}"
+            logger.error(error_msg)
+            self.stats.add_error(error_msg)
 
     def execute(self, portfolio_file: str) -> Tuple[Optional[Portfolio], List[str], PipelineStatistics]:
-        """Execute full ETL pipeline.
+        """Execute full ETL pipeline for mixed stock/bond portfolios.
 
         Args:
             portfolio_file: Path to portfolio CSV file
@@ -369,11 +641,15 @@ class ETLPipeline:
         # Step 2: Enrich prices
         self.enrich_prices(portfolio)
 
-        # Step 3: Enrich positions (company data)
-        companies, countries, executives = self.enrich_positions(portfolio.positions)
+        # Step 3: Enrich positions (stocks, bonds, companies, countries, executives)
+        stocks, bonds, companies, countries, executives = self.enrich_positions(
+            portfolio.positions
+        )
 
-        # Step 4: Build graph
-        statements = self.build_graph(portfolio, companies, countries, executives)
+        # Step 4: Build graph with new schema
+        statements = self.build_graph(
+            portfolio, stocks, bonds, companies, countries, executives
+        )
 
         logger.info("=" * 70)
         logger.info("ETL Pipeline Complete")

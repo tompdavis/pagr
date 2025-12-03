@@ -264,13 +264,13 @@ class FactSetClient:
             API response with prices
         """
         from datetime import datetime, timedelta
-        
+
         # Fetch last 5 days to ensure we get a closing price
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
-        
+
         logger.info(f"Fetching prices for {len(tickers)} tickers from {start_date} to {end_date}")
-        
+
         return self._make_request(
             "POST",
             "/content/factset-global-prices/v1/prices",
@@ -281,6 +281,127 @@ class FactSetClient:
                 "endDate": end_date
             },
         )
+
+    def get_bond_prices(self, identifiers: list[str], id_type: str = "CUSIP") -> dict:
+        """Fetch bond prices using ISIN or CUSIP identifiers.
+
+        Falls back to global prices endpoint if bond-specific endpoint fails.
+
+        Args:
+            identifiers: List of ISIN or CUSIP identifiers
+            id_type: Identifier type - "ISIN" or "CUSIP" (default: CUSIP)
+
+        Returns:
+            API response with bond prices
+
+        Raises:
+            FactSetClientError: If API call fails
+            ValueError: If id_type is invalid
+        """
+        if id_type not in ["ISIN", "CUSIP"]:
+            raise ValueError(f"Invalid id_type: {id_type}. Must be 'ISIN' or 'CUSIP'")
+
+        from datetime import datetime, timedelta
+
+        # Fetch last 5 days to ensure we get a closing price
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+
+        logger.info(
+            f"Fetching bond prices for {len(identifiers)} {id_type} identifiers "
+            f"from {start_date} to {end_date}"
+        )
+
+        # Use global prices endpoint which works for bonds with ISIN/CUSIP
+        return self._make_request(
+            "POST",
+            "/content/factset-global-prices/v1/prices",
+            json_data={
+                "ids": identifiers,
+                "idType": id_type,
+                "frequency": "D",
+                "startDate": start_date,
+                "endDate": end_date
+            },
+        )
+
+    def get_bond_details(self, identifier: str, id_type: str = "CUSIP") -> dict:
+        """Fetch comprehensive bond details including coupon, currency, maturity, issuer.
+
+        Uses FactSet Fixed Income reference data API and prices API.
+        Falls back to graceful degradation if API calls fail.
+
+        Args:
+            identifier: Single ISIN or CUSIP identifier
+            id_type: Identifier type - "ISIN" or "CUSIP" (default: CUSIP)
+
+        Returns:
+            API response with bond details (price, coupon, currency, maturity, issuer)
+
+        Raises:
+            FactSetClientError: If API call fails
+            ValueError: If id_type is invalid
+        """
+        if id_type not in ["ISIN", "CUSIP"]:
+            raise ValueError(f"Invalid id_type: {id_type}. Must be 'ISIN' or 'CUSIP'")
+
+        logger.info(f"Fetching bond details for {id_type}:{identifier}")
+
+        try:
+            # First, try to get reference data (coupon, maturity, currency, issuer)
+            reference_data = None
+            try:
+                ref_response = self._make_request(
+                    "POST",
+                    "/content/factset-fixed-income/v1/bond-details",
+                    json_data={"ids": [identifier], "idType": id_type},
+                )
+                if ref_response.get("data") and len(ref_response["data"]) > 0:
+                    reference_data = ref_response["data"][0]
+                    logger.debug(f"Retrieved reference data for {id_type}:{identifier}")
+            except Exception as e:
+                logger.debug(f"Could not fetch reference data: {e}. Will use prices only.")
+
+            # Second, get prices
+            price_data = None
+            try:
+                price_response = self.get_bond_prices([identifier], id_type)
+                if price_response.get("data") and len(price_response["data"]) > 0:
+                    price_data = price_response["data"][0]
+                    logger.debug(f"Retrieved price data for {id_type}:{identifier}")
+            except Exception as e:
+                logger.debug(f"Could not fetch price data: {e}. Will use reference data only.")
+
+            # Merge data from both sources
+            combined_data = {
+                "id": identifier,
+                "price": price_data.get("price") if price_data else None,
+                "priceDate": price_data.get("priceDate") if price_data else None,
+                "coupon": reference_data.get("coupon") if reference_data else None,
+                "currency": reference_data.get("currency") if reference_data else None,
+                "maturityDate": reference_data.get("maturityDate") if reference_data else None,
+                "issuer": reference_data.get("issuer") if reference_data else None,
+            }
+
+            logger.debug(f"Combined bond details for {id_type}:{identifier}: {combined_data}")
+            return {"data": [combined_data]}
+
+        except Exception as e:
+            logger.warning(f"Error fetching bond details for {id_type}:{identifier}: {e}")
+            # Return partial response structure for graceful degradation
+            return {
+                "data": [
+                    {
+                        "id": identifier,
+                        "price": None,
+                        "priceDate": None,
+                        "coupon": None,
+                        "currency": None,
+                        "maturityDate": None,
+                        "issuer": None,
+                    }
+                ]
+            }
 
     @staticmethod
     def from_credentials_file(

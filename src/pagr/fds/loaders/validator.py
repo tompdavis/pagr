@@ -16,15 +16,16 @@ class PositionValidator:
     """Validates portfolio position data."""
 
     # Required columns for a position
-    # Note: Either 'book_value' OR 'market_value' is required (book_value preferred)
-    REQUIRED_COLUMNS = {"ticker", "quantity"}
+    REQUIRED_COLUMNS = {"quantity"}
+    # Identifier columns: At least ONE of ticker, isin, or cusip is required
+    IDENTIFIER_COLUMNS = {"ticker", "isin", "cusip"}
     VALUE_COLUMNS = {"book_value", "market_value"}  # At least one required
 
     # Optional columns
-    OPTIONAL_COLUMNS = {"security_type", "isin", "cusip", "purchase_date"}
+    OPTIONAL_COLUMNS = {"security_type", "purchase_date"}
 
     # All valid columns
-    VALID_COLUMNS = REQUIRED_COLUMNS | VALUE_COLUMNS | OPTIONAL_COLUMNS
+    VALID_COLUMNS = REQUIRED_COLUMNS | IDENTIFIER_COLUMNS | VALUE_COLUMNS | OPTIONAL_COLUMNS
 
     @classmethod
     def validate_headers(cls, headers: List[str]) -> None:
@@ -46,17 +47,26 @@ class PositionValidator:
 
         logger.debug(f"Validated headers_set: {sorted(headers_set)}")
         logger.debug(f"Required columns: {sorted(cls.REQUIRED_COLUMNS)}")
+        logger.debug(f"Identifier columns (need at least one): {sorted(cls.IDENTIFIER_COLUMNS)}")
         logger.debug(f"Value columns (book_value OR market_value): {sorted(cls.VALUE_COLUMNS)}")
 
-        # Check required columns (ticker, quantity)
+        # Check required columns
         missing = cls.REQUIRED_COLUMNS - headers_set
-
         if missing:
             logger.error(f"Missing required columns: {missing}, Got: {headers_set}")
             raise ValidationError(
                 f"Missing required columns: {', '.join(sorted(missing))}. "
                 f"Required: {', '.join(sorted(cls.REQUIRED_COLUMNS))}. "
                 f"Note: Column names can have spaces (e.g., 'Book Value') or underscores (e.g., 'book_value')"
+            )
+
+        # Check that at least one identifier column exists (ticker OR isin OR cusip)
+        has_identifier = bool(cls.IDENTIFIER_COLUMNS & headers_set)
+        if not has_identifier:
+            logger.error(f"Missing identifier columns. Need at least one of: ticker, isin, cusip. Got: {headers_set}")
+            raise ValidationError(
+                f"Missing identifier columns. CSV must contain at least one of: ticker, isin, or cusip. "
+                f"Got columns: {', '.join(sorted(headers_set))}"
             )
 
         # Check that at least one value column exists (book_value OR market_value)
@@ -90,12 +100,23 @@ class PositionValidator:
                     f"Row {row_number}: Missing required field '{required_field}'"
                 )
 
-        # Validate ticker format
+        # Validate identifiers: at least one of ticker, isin, cusip must be provided
         ticker = position_dict.get("ticker", "").strip()
-        if not ticker:
-            raise ValidationError(f"Row {row_number}: Ticker is empty")
+        isin = position_dict.get("isin", "").strip()
+        cusip = position_dict.get("cusip", "").strip()
 
-        if "-" not in ticker:
+        # Treat N/A, null, and empty string as missing
+        ticker = ticker if ticker and ticker.lower() != "n/a" and ticker.lower() != "null" else ""
+        isin = isin if isin and isin.lower() != "n/a" and isin.lower() != "null" else ""
+        cusip = cusip if cusip and cusip.lower() != "n/a" and cusip.lower() != "null" else ""
+
+        if not any([ticker, isin, cusip]):
+            raise ValidationError(
+                f"Row {row_number}: Must provide at least one identifier: ticker, isin, or cusip"
+            )
+
+        # Validate ticker format if provided
+        if ticker and "-" not in ticker:
             logger.warning(
                 f"Row {row_number}: Ticker '{ticker}' may be in invalid format. "
                 f"Expected format: TICKER-EXCHANGE (e.g., AAPL-US)"
@@ -162,29 +183,55 @@ class PositionValidator:
 
     @classmethod
     def validate_no_duplicates(cls, positions: List) -> None:
-        """Check for duplicate tickers in portfolio.
+        """Check for duplicate identifiers in portfolio.
+
+        For stocks: ticker must be unique
+        For bonds: (isin, cusip) pair must be unique
 
         Args:
-            positions: List of position dicts or Position objects
+            positions: List of Position objects
 
         Raises:
-            ValidationError: If duplicate tickers found
+            ValidationError: If duplicate identifiers found
         """
-        tickers = []
-        for p in positions:
-            # Handle both dict and Position objects
-            if isinstance(p, dict):
-                ticker = p.get("ticker", "").strip()
-            else:
-                # Assume it's a Position object
-                ticker = p.ticker if hasattr(p, "ticker") else ""
-            tickers.append(ticker)
+        identifiers = []
+        duplicate_info = []
 
-        duplicates = [t for t in tickers if tickers.count(t) > 1]
+        for p in positions:
+            # Get primary identifier
+            if hasattr(p, "get_primary_identifier"):
+                id_type, id_value = p.get_primary_identifier()
+                identifier_str = f"{id_type}:{id_value}"
+                identifiers.append(identifier_str)
+            elif isinstance(p, dict):
+                # Fallback for dict
+                ticker = p.get("ticker", "").strip() or None
+                isin = p.get("isin", "").strip() or None
+                cusip = p.get("cusip", "").strip() or None
+
+                if cusip:
+                    id_type, id_value = "cusip", cusip
+                elif isin:
+                    id_type, id_value = "isin", isin
+                elif ticker:
+                    id_type, id_value = "ticker", ticker
+                else:
+                    continue
+
+                identifier_str = f"{id_type}:{id_value}"
+                identifiers.append(identifier_str)
+
+        # Find duplicates
+        seen = set()
+        duplicates = []
+        for identifier in identifiers:
+            if identifier in seen:
+                duplicates.append(identifier)
+            seen.add(identifier)
 
         if duplicates:
             unique_duplicates = list(set(duplicates))
             raise ValidationError(
-                f"Duplicate tickers found: {', '.join(sorted(unique_duplicates))}. "
-                f"Each ticker must appear only once."
+                f"Duplicate identifiers found: {', '.join(sorted(unique_duplicates))}. "
+                f"Each security identifier must appear only once in the portfolio."
             )

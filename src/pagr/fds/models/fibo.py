@@ -10,12 +10,22 @@ from pydantic import BaseModel, ConfigDict, Field
 class RelationshipType(str, Enum):
     """Relationship type enumeration."""
 
+    # Security relationships
+    INVESTED_IN = "INVESTED_IN"  # Position -> Security
+    ISSUED_BY = "ISSUED_BY"  # Security -> Company
+    CONTAINS = "CONTAINS"  # Portfolio -> Position
+    HEADQUARTERED_IN = "HEADQUARTERED_IN"  # Company -> Country
+
+    # Company relationships
     HAS_SUBSIDIARY = "HAS_SUBSIDIARY"
     SUBSIDIARY_OF = "SUBSIDIARY_OF"
     PARENT_OF = "PARENT_OF"
     OPERATES_IN = "OPERATES_IN"
     SUPPLIES_TO = "SUPPLIES_TO"
     CUSTOMER_OF = "CUSTOMER_OF"
+
+    # Leadership relationships
+    CEO_OF = "CEO_OF"  # Executive -> Company
 
 
 class Company(BaseModel):
@@ -119,6 +129,7 @@ class Stock(BaseModel):
                 "isin": "US0378331005",
                 "cusip": "037833100",
                 "sedol": "2046251",
+                "market_price": 195.25,
             }
         }
     )
@@ -129,6 +140,7 @@ class Stock(BaseModel):
     isin: Optional[str] = Field(default=None, description="ISIN identifier")
     cusip: Optional[str] = Field(default=None, description="CUSIP identifier")
     sedol: Optional[str] = Field(default=None, description="SEDOL identifier")
+    market_price: Optional[float] = Field(default=None, description="Last close market price in USD")
 
 
 class Bond(BaseModel):
@@ -138,19 +150,25 @@ class Bond(BaseModel):
         json_schema_extra={
             "example": {
                 "fibo_id": "fibo:bond:US3696041033",
-                "ticker": "GE-BOND",
                 "isin": "US3696041033",
                 "cusip": "369604103",
                 "security_type": "Corporate Bond",
+                "coupon": 4.5,
+                "currency": "USD",
+                "market_price": 98.75,
+                "maturity_date": "2032-06-15",
             }
         }
     )
 
     fibo_id: str = Field(..., description="Unique FIBO identifier")
-    ticker: str = Field(..., description="Bond ticker")
-    isin: Optional[str] = Field(default=None, description="ISIN identifier")
+    isin: Optional[str] = Field(default=None, description="ISIN identifier (preferred)")
     cusip: Optional[str] = Field(default=None, description="CUSIP identifier")
     security_type: Optional[str] = Field(default="Bond", description="Bond type")
+    coupon: Optional[float] = Field(default=None, description="Annual coupon rate (%) - N/A if not available")
+    currency: Optional[str] = Field(default="USD", description="Bond currency")
+    market_price: Optional[float] = Field(default=None, description="Clean price (excludes accrued interest) in USD")
+    maturity_date: Optional[str] = Field(default=None, description="Maturity date (ISO format)")
 
 
 class Derivative(BaseModel):

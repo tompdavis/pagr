@@ -44,6 +44,7 @@ class GraphQueries:
         """Query 1: Sector exposure from portfolio.
 
         Returns sectors, total exposure, total weight, number of positions.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -52,7 +53,8 @@ class GraphQueries:
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company)
 RETURN
     c.sector AS sector,
     SUM(pos.market_value) AS total_exposure,
@@ -66,6 +68,7 @@ ORDER BY total_exposure DESC;
         """Query 2a: Direct exposure to a country.
 
         Returns companies headquartered in the country.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -75,8 +78,8 @@ ORDER BY total_exposure DESC;
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
-      -[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company)-[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
 RETURN
     c.name AS company,
     SUM(pos.market_value) AS exposure,
@@ -114,6 +117,7 @@ ORDER BY exposure DESC;
         """Query 2c: Exposure to a specific company (direct and indirect).
 
         Returns direct holdings and indirect exposure through supply chain.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -123,10 +127,11 @@ ORDER BY exposure DESC;
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company {{name: '{company_name}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company {{name: '{company_name}'}})
 WITH SUM(pos.market_value) AS direct_exposure
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(portfolio_company:Company)
-      -[:CUSTOMER_OF]->(:Company {{name: '{company_name}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(portfolio_company:Company)-[:CUSTOMER_OF]->(:Company {{name: '{company_name}'}})
 WITH direct_exposure, SUM(pos.market_value) AS indirect_exposure
 RETURN
     direct_exposure,
@@ -139,6 +144,7 @@ RETURN
         """Query 3: What if analysis - sector slowdown in region.
 
         Returns companies affected and total exposure.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -149,8 +155,8 @@ RETURN
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})
-      -[:HEADQUARTERED_IN]->(country:Country {{region: '{region}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})-[:HEADQUARTERED_IN]->(country:Country {{region: '{region}'}})
 RETURN
     c.name AS company,
     c.sector AS sector,
@@ -164,6 +170,7 @@ ORDER BY exposure_at_risk DESC;
         """Query 4: CEOs of portfolio companies.
 
         Returns executives and their positions.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -172,8 +179,8 @@ ORDER BY exposure_at_risk DESC;
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
-      <-[:CEO_OF]-(exec:Executive)
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company)<-[:CEO_OF]-(exec:Executive)
 RETURN
     c.name AS company,
     exec.name AS executive_name,
@@ -187,6 +194,7 @@ ORDER BY position_value DESC;
         """Query 5: Total exposure to a company including subsidiaries & suppliers.
 
         Returns direct holdings, subsidiary holdings, and supplier exposure.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -196,7 +204,8 @@ ORDER BY position_value DESC;
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company {{ticker: '{company_ticker}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company {{ticker: '{company_ticker}'}})
 RETURN
     c.name AS company_name,
     SUM(pos.market_value) AS direct_exposure,
@@ -209,7 +218,8 @@ RETURN
     def sector_positions(portfolio_name: str, sector: str) -> str:
         """Get all positions in a specific sector.
 
-        Returns positions issued by companies in the sector.
+        Returns positions invested in companies in the sector.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -219,9 +229,10 @@ RETURN
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})
 RETURN
-    c.ticker AS ticker,
+    CASE WHEN sec:Stock THEN sec.ticker ELSE NULL END AS ticker,
     c.name AS company,
     pos.quantity AS quantity,
     pos.market_value AS market_value,
@@ -234,6 +245,7 @@ ORDER BY market_value DESC;
         """Get portfolio breakdown by country.
 
         Returns countries and their total exposure and weight.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -242,8 +254,8 @@ ORDER BY market_value DESC;
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
-      -[:HEADQUARTERED_IN]->(country:Country)
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company)-[:HEADQUARTERED_IN]->(country:Country)
 RETURN
     country.iso_code AS country_code,
     country.name AS country,
@@ -257,7 +269,8 @@ ORDER BY total_exposure DESC;
     def country_positions(portfolio_name: str, country_iso: str) -> str:
         """Get all positions in companies headquartered in a specific country.
 
-        Returns positions issued by companies in the country.
+        Returns positions invested in companies in the country.
+        Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
             portfolio_name: Name of portfolio
@@ -267,10 +280,10 @@ ORDER BY total_exposure DESC;
             Cypher query string
         """
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:ISSUED_BY]->(c:Company)
-      -[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
+MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+      -[:ISSUED_BY]->(c:Company)-[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
 RETURN
-    c.ticker AS ticker,
+    CASE WHEN sec:Stock THEN sec.ticker ELSE NULL END AS ticker,
     c.name AS company,
     pos.quantity AS quantity,
     pos.market_value AS market_value,

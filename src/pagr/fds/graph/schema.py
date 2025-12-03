@@ -25,9 +25,9 @@ class RelationshipType:
     # Portfolio relationships
     CONTAINS = "CONTAINS"  # Portfolio -> Position
 
-    # Position relationships
-    HOLDS = "HOLDS"  # Position -> Stock/Bond/Derivative
-    ISSUED_BY = "ISSUED_BY"  # Position -> Company (direct holding)
+    # Position relationships (new hierarchy: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company)
+    INVESTED_IN = "INVESTED_IN"  # Position -> Stock/Bond/Derivative
+    HOLDS = "HOLDS"  # Position -> Stock/Bond/Derivative (deprecated, use INVESTED_IN)
 
     # Company relationships
     HAS_SUBSIDIARY = "HAS_SUBSIDIARY"  # Company -> Company
@@ -47,7 +47,7 @@ class RelationshipType:
     LEADS = "LEADS"  # Executive -> Company
 
     # Security relationships
-    ISSUED_BY_COMPANY = "ISSUED_BY"  # Stock/Bond -> Company
+    ISSUED_BY = "ISSUED_BY"  # Stock/Bond -> Company
 
     # Geographic structure
     PART_OF = "PART_OF"  # Country -> Region
@@ -184,6 +184,7 @@ class NodeProperties:
             "isin": "string",  # ISIN identifier
             "cusip": "string",  # CUSIP identifier
             "sedol": "string",  # SEDOL identifier
+            "market_price": "float",  # Last close market price in USD
         }
 
     @staticmethod
@@ -191,10 +192,13 @@ class NodeProperties:
         """Bond node properties."""
         return {
             "fibo_id": "string",  # Unique FIBO identifier
-            "ticker": "string",  # Bond ticker
-            "isin": "string",  # ISIN identifier
+            "isin": "string",  # ISIN identifier (preferred)
             "cusip": "string",  # CUSIP identifier
             "security_type": "string",  # Bond type
+            "coupon": "float",  # Annual coupon rate (%) - N/A if not available
+            "currency": "string",  # Bond currency
+            "market_price": "float",  # Clean price (excludes accrued interest) in USD
+            "maturity_date": "string",  # Maturity date (ISO format)
         }
 
 
@@ -277,6 +281,7 @@ class SchemaInitializer:
         """
         return [
             RelationshipType.CONTAINS,
+            RelationshipType.INVESTED_IN,
             RelationshipType.HOLDS,
             RelationshipType.ISSUED_BY,
             RelationshipType.HAS_SUBSIDIARY,

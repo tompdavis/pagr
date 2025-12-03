@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Position(BaseModel):
@@ -11,18 +11,30 @@ class Position(BaseModel):
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "ticker": "AAPL-US",
-                "quantity": 100,
-                "book_value": 19000.00,
-                "security_type": "Common Stock",
-                "isin": "US0378331005",
-                "weight": 25.5,
-            }
+            "examples": [
+                {
+                    "ticker": "AAPL-US",
+                    "quantity": 100,
+                    "book_value": 19000.00,
+                    "security_type": "Common Stock",
+                    "isin": "US0378331005",
+                    "cusip": "037833100",
+                    "weight": 25.5,
+                },
+                {
+                    "ticker": None,
+                    "quantity": 500,
+                    "book_value": 50000.00,
+                    "security_type": "Corporate Bond",
+                    "isin": "US037833AA56",
+                    "cusip": "037833AA5",
+                    "weight": 50.0,
+                }
+            ]
         }
     )
 
-    ticker: str = Field(..., description="Security ticker (e.g., AAPL-US)")
+    ticker: Optional[str] = Field(default=None, description="Security ticker (e.g., AAPL-US). Optional for bonds.")
     quantity: float = Field(..., description="Number of shares/units", gt=0)
     book_value: float = Field(..., description="Book value (cost basis) in USD", ge=0)
     security_type: str = Field(default="Common Stock", description="Type of security")
@@ -31,6 +43,27 @@ class Position(BaseModel):
     market_value: Optional[float] = Field(default=None, description="Current market value in USD (fetched separately)")
     purchase_date: Optional[str] = Field(default=None, description="Purchase date (ISO format)")
     weight: Optional[float] = Field(default=None, description="Portfolio weight (%)")
+
+    @model_validator(mode='after')
+    def validate_identifiers(self):
+        """Validate that at least one identifier is provided: ticker, isin, or cusip."""
+        if not any([self.ticker, self.isin, self.cusip]):
+            raise ValueError("Must provide at least one identifier: ticker, isin, or cusip")
+        return self
+
+    def get_primary_identifier(self) -> tuple[str, str]:
+        """Return (identifier_type, identifier_value) preferring CUSIP > ISIN > ticker.
+
+        Returns:
+            Tuple of (identifier_type, identifier_value). Returns (None, None) if no identifiers.
+        """
+        if self.cusip:
+            return ("cusip", self.cusip)
+        elif self.isin:
+            return ("isin", self.isin)
+        elif self.ticker:
+            return ("ticker", self.ticker)
+        return (None, None)
 
 
 class Portfolio(BaseModel):
@@ -47,15 +80,27 @@ class Portfolio(BaseModel):
                         "quantity": 100,
                         "book_value": 19000.00,
                         "security_type": "Common Stock",
+                        "isin": "US0378331005",
+                        "cusip": "037833100",
                     },
                     {
                         "ticker": "MSFT-US",
                         "quantity": 50,
                         "book_value": 21000.00,
                         "security_type": "Common Stock",
+                        "isin": "US5949181045",
+                        "cusip": "594918104",
+                    },
+                    {
+                        "ticker": None,
+                        "quantity": 500,
+                        "book_value": 50000.00,
+                        "security_type": "Corporate Bond",
+                        "isin": "US037833AA56",
+                        "cusip": "037833AA5",
                     },
                 ],
-                "total_value": 40000.00,
+                "total_value": 90000.00,
             }
         }
     )

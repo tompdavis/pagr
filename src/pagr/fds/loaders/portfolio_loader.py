@@ -30,10 +30,12 @@ class PortfolioLoader:
     def load(cls, file_path: str, portfolio_name: Optional[str] = None) -> Portfolio:
         """Load portfolio from CSV file.
 
-        CSV format:
+        CSV format (supports both stocks and bonds):
             ticker,quantity,book_value,security_type,isin,cusip
             AAPL-US,100,19000.00,Common Stock,US0378331005,037833100
             MSFT-US,50,21000.00,Common Stock,US5949181045,594918104
+            ,500,50000.00,Corporate Bond,US037833AA56,037833AA5
+            ,300,30000.00,Treasury Bond,US912828Z772,
 
         Args:
             file_path: Path to CSV file
@@ -122,17 +124,34 @@ class PortfolioLoader:
                         book_value = float(normalized_row["book_value"])
                     elif "market_value" in normalized_row and normalized_row["market_value"]:
                         book_value = float(normalized_row["market_value"])
-                        logger.info(f"Row {row_num}: Using market_value as book_value for {normalized_row['ticker']}")
+                        logger.info(f"Row {row_num}: Using market_value as book_value")
                     else:
                         raise ValueError(f"Row {row_num}: Must have either 'book_value' or 'market_value'")
 
+                    # Handle ticker (may be empty/None for bonds)
+                    ticker_str = normalized_row.get("ticker", "").strip()
+                    # Treat N/A, null, and empty string as None
+                    ticker = None
+                    if ticker_str and ticker_str.lower() not in ["n/a", "null"]:
+                        ticker = ticker_str.upper()
+
+                    # Get identifiers
+                    isin = normalized_row.get("isin", "").strip() or None
+                    cusip = normalized_row.get("cusip", "").strip() or None
+
+                    # Clean up N/A values
+                    if isin and isin.lower() == "n/a":
+                        isin = None
+                    if cusip and cusip.lower() == "n/a":
+                        cusip = None
+
                     position = Position(
-                        ticker=normalized_row["ticker"].strip().upper(),
+                        ticker=ticker,
                         quantity=float(normalized_row["quantity"]),
                         book_value=book_value,
                         security_type=normalized_row.get("security_type", "Common Stock").strip(),
-                        isin=normalized_row.get("isin", "").strip() or None,
-                        cusip=normalized_row.get("cusip", "").strip() or None,
+                        isin=isin,
+                        cusip=cusip,
                         market_value=(
                             float(normalized_row["market_value"])
                             if normalized_row.get("market_value") and "market_value" != "book_value"
@@ -142,9 +161,12 @@ class PortfolioLoader:
                     )
 
                     positions.append(position)
+
+                    # Log with primary identifier for clarity
+                    id_type, id_value = position.get_primary_identifier()
                     logger.debug(
-                        f"Row {row_num}: Loaded {position.ticker} - "
-                        f"{position.quantity} shares @ ${position.book_value:,.2f} book value"
+                        f"Row {row_num}: Loaded {id_type}:{id_value} - "
+                        f"{position.quantity} units @ ${position.book_value:,.2f} book value"
                     )
 
                 except ValidationError:
@@ -164,18 +186,20 @@ class PortfolioLoader:
 
     @staticmethod
     def create_sample_csv(file_path: str = "data/sample_portfolio.csv") -> None:
-        """Create a sample portfolio CSV file.
+        """Create a sample portfolio CSV file with stocks and bonds.
 
         Args:
             file_path: Path where to create sample file
         """
         sample_data = [
-            ["ticker", "quantity", "market_value", "security_type", "isin", "cusip"],
+            ["ticker", "quantity", "book_value", "security_type", "isin", "cusip"],
+            # Stocks
             ["AAPL-US", "100", "19000.00", "Common Stock", "US0378331005", "037833100"],
             ["MSFT-US", "50", "21000.00", "Common Stock", "US5949181045", "594918104"],
             ["TSMC-TT", "200", "32000.00", "Common Stock", "US8740391003", "874039100"],
-            ["GE-US", "150", "12000.00", "Common Stock", "US3696041033", "369604103"],
-            ["NVDA-US", "30", "13500.00", "Common Stock", "US67066G1040", "67066G104"],
+            # Bonds (note: ticker is empty/null for bonds)
+            ["", "500", "50000.00", "Corporate Bond", "US037833AA56", "037833AA5"],
+            ["", "300", "30000.00", "Treasury Bond", "US912828Z772", "912828Z77"],
         ]
 
         output_path = Path(file_path)
@@ -185,4 +209,4 @@ class PortfolioLoader:
             writer = csv.writer(f)
             writer.writerows(sample_data)
 
-        logger.info(f"Created sample portfolio CSV at {file_path}")
+        logger.info(f"Created sample portfolio CSV at {file_path} (includes stocks and bonds)")

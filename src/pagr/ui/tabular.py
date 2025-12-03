@@ -1,10 +1,14 @@
 """Tabular view component with sector/country analysis."""
 
+import logging
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pagr.fds.models.portfolio import Portfolio
 from pagr.fds.graph.queries import QueryService
+from pagr.errors import UIRenderError
+
+logger = logging.getLogger(__name__)
 
 
 def _pad_dataframe_to_height(df, max_rows=10):
@@ -15,28 +19,61 @@ def _pad_dataframe_to_height(df, max_rows=10):
     return df_copy
 
 
+def _get_security_description(position):
+    """Generate security description for display (ticker for stocks, CUSIP/ISIN for bonds).
+
+    Args:
+        position: Position object
+
+    Returns:
+        String describing the security (ticker for stocks, CUSIP (Bond) or ISIN (Bond) for bonds)
+    """
+    if position.ticker:
+        return position.ticker
+    elif position.cusip:
+        return f"{position.cusip} (Bond)"
+    elif position.isin:
+        return f"{position.isin} (Bond)"
+    else:
+        return "Unknown"
+
+
 def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
     """Display tabular view with positions and exposure analysis."""
     st.subheader("Positions")
 
-    positions_data = []
-    for pos in portfolio.positions:
-        book_value = pos.book_value if hasattr(pos, 'book_value') else 0.0
-        market_value = pos.market_value if hasattr(pos, 'market_value') else None
-        weight = pos.weight if hasattr(pos, 'weight') else 0.0
-        security_type = pos.security_type if hasattr(pos, 'security_type') else "Unknown"
+    try:
+        positions_data = []
+        for pos in portfolio.positions:
+            try:
+                book_value = pos.book_value if hasattr(pos, 'book_value') else 0.0
+                market_value = pos.market_value if hasattr(pos, 'market_value') else None
+                weight = pos.weight if hasattr(pos, 'weight') else 0.0
+                security_type = pos.security_type if hasattr(pos, 'security_type') else "Unknown"
+                security_desc = _get_security_description(pos)
 
-        positions_data.append({
-            "Ticker": pos.ticker,
-            "Quantity": pos.quantity,
-            "Book Value": f"${book_value:,.2f}",
-            "Market Value (Last Close)": f"${market_value:,.2f}" if market_value else "N/A",
-            "Weight (%)": f"{weight:.2f}%" if weight else "N/A",
-            "Type": security_type,
-        })
+                positions_data.append({
+                    "Security": security_desc,
+                    "Type": security_type,
+                    "Quantity": pos.quantity,
+                    "Book Value": f"${book_value:,.2f}",
+                    "Market Value (Last Close)": f"${market_value:,.2f}" if market_value else "N/A",
+                    "Weight (%)": f"{weight:.2f}%" if weight else "N/A",
+                })
+            except Exception as e:
+                logger.error(f"Error processing position: {e}")
+                st.warning(f"⚠️ Could not display one position: {str(e)[:100]}")
+                continue
 
-    df_positions = pd.DataFrame(positions_data)
-    st.dataframe(df_positions, use_container_width=True, hide_index=True)
+        if positions_data:
+            df_positions = pd.DataFrame(positions_data)
+            st.dataframe(df_positions, use_container_width=True, hide_index=True)
+        else:
+            st.info("No positions to display")
+    except Exception as e:
+        error = UIRenderError(str(e), component="Positions Table")
+        error.log_error()
+        st.error(f"❌ Error displaying positions: {error.message}")
 
     col1, col2 = st.columns([1, 1])
 
@@ -45,30 +82,39 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
         st.subheader("Sector Exposure")
         try:
             # Get sector breakdown
-            sector_result = query_service.sector_exposure(portfolio.name)
+            try:
+                sector_result = query_service.sector_exposure(portfolio.name)
+            except Exception as e:
+                logger.error(f"Error querying sector exposure: {e}")
+                raise UIRenderError(f"Failed to query sector exposure: {str(e)[:100]}", component="Sector Exposure")
+
             if sector_result and sector_result.records:
-                sector_data = [dict(record) for record in sector_result.records]
-                sector_df = pd.DataFrame(sector_data)
+                try:
+                    sector_data = [dict(record) for record in sector_result.records]
+                    sector_df = pd.DataFrame(sector_data)
 
-                # Display sector breakdown table
-                display_df = sector_df.copy()
-                if 'total_exposure' in display_df.columns:
-                    display_df['total_exposure'] = display_df['total_exposure'].apply(lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00")
-                if 'total_weight' in display_df.columns:
-                    display_df['total_weight'] = display_df['total_weight'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "0.00%")
+                    # Display sector breakdown table
+                    display_df = sector_df.copy()
+                    if 'total_exposure' in display_df.columns:
+                        display_df['total_exposure'] = display_df['total_exposure'].apply(lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00")
+                    if 'total_weight' in display_df.columns:
+                        display_df['total_weight'] = display_df['total_weight'].apply(lambda x: f"{x:.2f}%" if pd.notnull(x) else "0.00%")
 
-                if 'num_positions' in display_df.columns:
-                    display_df = display_df.drop(columns=['num_positions'])
+                    if 'num_positions' in display_df.columns:
+                        display_df = display_df.drop(columns=['num_positions'])
 
-                display_df = display_df.rename(columns={
-                    'sector': 'Sector',
-                    'total_exposure': 'Exposure',
-                    'total_weight': 'Weight'
-                })
+                    display_df = display_df.rename(columns={
+                        'sector': 'Sector',
+                        'total_exposure': 'Exposure',
+                        'total_weight': 'Weight'
+                    })
 
-                st.write("**Sector Breakdown**")
-                display_df = _pad_dataframe_to_height(display_df, max_rows=10)
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    st.write("**Sector Breakdown**")
+                    display_df = _pad_dataframe_to_height(display_df, max_rows=10)
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                except Exception as e:
+                    logger.error(f"Error formatting sector data: {e}")
+                    st.warning(f"⚠️ Error formatting sector data: {str(e)[:100]}")
 
                 # Display sector breakdown chart
                 if 'sector' in sector_df.columns and 'total_exposure' in sector_df.columns:
@@ -113,12 +159,18 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                             )
 
                         display_sector_pos_df = display_sector_pos_df.rename(columns={
-                            'ticker': 'Ticker',
+                            'ticker': 'Security',
                             'company': 'Company',
                             'quantity': 'Quantity',
                             'market_value': 'Market Value',
                             'weight': 'Weight'
                         })
+                        # For bonds (ticker is NULL), display company name or N/A
+                        if 'Security' in display_sector_pos_df.columns:
+                            display_sector_pos_df['Security'] = display_sector_pos_df.apply(
+                                lambda row: row['Security'] if pd.notnull(row['Security']) and row['Security'] != '' else 'Bond',
+                                axis=1
+                            )
 
                         st.write(f"**Positions in {selected_sector}**")
                         st.dataframe(display_sector_pos_df, use_container_width=True, hide_index=True)
@@ -220,12 +272,18 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                             )
 
                         display_country_pos_df = display_country_pos_df.rename(columns={
-                            'ticker': 'Ticker',
+                            'ticker': 'Security',
                             'company': 'Company',
                             'quantity': 'Quantity',
                             'market_value': 'Market Value',
                             'weight': 'Weight'
                         })
+                        # For bonds (ticker is NULL), display company name or N/A
+                        if 'Security' in display_country_pos_df.columns:
+                            display_country_pos_df['Security'] = display_country_pos_df.apply(
+                                lambda row: row['Security'] if pd.notnull(row['Security']) and row['Security'] != '' else 'Bond',
+                                axis=1
+                            )
 
                         st.write(f"**Positions in {selected_country}**")
                         st.dataframe(display_country_pos_df, use_container_width=True, hide_index=True)

@@ -78,8 +78,9 @@ class GraphBuilder:
         portfolio_name_escaped = self._escape_string(portfolio_name)
 
         for pos in positions:
-            ticker = self._escape_string(pos.ticker)
-            ticker_var = ticker.replace("-", "_").replace(".", "_")  # Sanitize for use as Cypher variable
+            # Handle None ticker (for bonds) - use empty string
+            ticker = self._escape_string(pos.ticker) if pos.ticker else ""
+            ticker_var = (ticker or "None").replace("-", "_").replace(".", "_")  # Sanitize for use as Cypher variable
             quantity = pos.quantity
             market_value = pos.market_value
             security_type = self._escape_string(pos.security_type or "Unknown")
@@ -242,6 +243,7 @@ class GraphBuilder:
             isin_clause = f", isin: '{isin}'" if isin else ""
             cusip_clause = f", cusip: '{cusip}'" if cusip else ""
             sedol_clause = f", sedol: '{sedol}'" if sedol else ""
+            market_price_clause = f", market_price: {stock.market_price}" if stock.market_price is not None else ""
 
             query = (
                 f"MERGE (s:Stock {{fibo_id: '{fibo_id}'}}) "
@@ -249,27 +251,38 @@ class GraphBuilder:
                 f"s.security_type = '{security_type}' "
                 f"{isin_clause}"
                 f"{cusip_clause}"
-                f"{sedol_clause} "
+                f"{sedol_clause}"
+                f"{market_price_clause} "
                 f"RETURN s;"
             )
             self.node_statements.append(query)
 
         for ticker, bond in bonds.items():
             fibo_id = self._escape_string(bond.fibo_id)
-            ticker_clean = self._escape_string(ticker)
             isin = self._escape_string(bond.isin) if bond.isin else ""
             cusip = self._escape_string(bond.cusip) if bond.cusip else ""
             security_type = self._escape_string(bond.security_type) if bond.security_type else "Bond"
+            coupon = bond.coupon
+            currency = self._escape_string(bond.currency) if bond.currency else "USD"
+            market_price = bond.market_price
+            maturity_date = self._escape_string(bond.maturity_date) if bond.maturity_date else ""
 
-            isin_clause = f", isin: '{isin}'" if isin else ""
-            cusip_clause = f", cusip: '{cusip}'" if cusip else ""
+            isin_clause = f", b.isin = '{isin}'" if isin else ""
+            cusip_clause = f", b.cusip = '{cusip}'" if cusip else ""
+            coupon_clause = f", b.coupon = {coupon}" if coupon is not None else ""
+            currency_clause = f", b.currency = '{currency}'"
+            market_price_clause = f", b.market_price = {market_price}" if market_price is not None else ""
+            maturity_date_clause = f", b.maturity_date = '{maturity_date}'" if maturity_date else ""
 
             query = (
                 f"MERGE (b:Bond {{fibo_id: '{fibo_id}'}}) "
-                f"SET b.ticker = '{ticker_clean}', "
-                f"b.security_type = '{security_type}' "
+                f"SET b.security_type = '{security_type}' "
                 f"{isin_clause}"
-                f"{cusip_clause} "
+                f"{cusip_clause}"
+                f"{coupon_clause}"
+                f"{currency_clause}"
+                f"{market_price_clause}"
+                f"{maturity_date_clause} "
                 f"RETURN b;"
             )
             self.node_statements.append(query)
@@ -296,7 +309,9 @@ class GraphBuilder:
         logger.debug(f"Added {len(position_to_company)} ISSUED_BY relationships")
 
     def add_holds_relationships(self, position_to_security: Dict[str, Tuple[str, str]]) -> None:
-        """Add HOLDS relationships between positions and securities.
+        """Add HOLDS relationships between positions and securities (deprecated).
+
+        Use add_invested_in_relationships() instead for new code.
 
         Args:
             position_to_security: Dict of position_ticker -> (security_type, security_fibo_id)
@@ -315,6 +330,73 @@ class GraphBuilder:
             self.relationship_statements.append(query)
 
         logger.debug(f"Added {len(position_to_security)} HOLDS relationships")
+
+    def add_invested_in_relationships(
+        self, position_to_security: Dict
+    ) -> None:
+        """Add INVESTED_IN relationships between positions and securities.
+
+        New graph schema: Position -[INVESTED_IN]-> Stock/Bond
+
+        Args:
+            position_to_security: Dict where keys are either:
+                                  - str (ticker) for stocks, or
+                                  - tuple (ticker, quantity, book_value) for bonds
+                                  Values are (security_type, security_fibo_id) tuples
+                                security_type is 'stock' or 'bond'
+        """
+        for pos_key, (sec_type, sec_fibo_id) in position_to_security.items():
+            sec_fibo_id_clean = self._escape_string(sec_fibo_id)
+            label = "Stock" if sec_type.lower() == "stock" else "Bond"
+
+            # Handle both string keys (stocks) and tuple keys (bonds)
+            if isinstance(pos_key, tuple):
+                # Bond position: match by (ticker, quantity, book_value)
+                pos_ticker, pos_qty, pos_book_value = pos_key
+                pos_ticker_clean = self._escape_string(pos_ticker)
+                query = (
+                    f"MATCH (pos:Position {{ticker: '{pos_ticker_clean}', "
+                    f"quantity: {pos_qty}, "
+                    f"cost_basis: {pos_book_value}}}), "
+                    f"(s:{label} {{fibo_id: '{sec_fibo_id_clean}'}}) "
+                    f"CREATE (pos)-[:INVESTED_IN]->(s);"
+                )
+            else:
+                # Stock position: match by ticker only
+                pos_ticker_clean = self._escape_string(pos_key)
+                query = (
+                    f"MATCH (pos:Position {{ticker: '{pos_ticker_clean}'}}), "
+                    f"(s:{label} {{fibo_id: '{sec_fibo_id_clean}'}}) "
+                    f"CREATE (pos)-[:INVESTED_IN]->(s);"
+                )
+            self.relationship_statements.append(query)
+
+        logger.debug(f"Added {len(position_to_security)} INVESTED_IN relationships")
+
+    def add_security_issued_by_relationships(
+        self, security_to_company: Dict[str, Tuple[str, str]]
+    ) -> None:
+        """Add ISSUED_BY relationships between securities and companies.
+
+        New graph schema: Stock/Bond -[ISSUED_BY]-> Company
+
+        Args:
+            security_to_company: Dict of security_fibo_id -> (security_type, company_fibo_id)
+                                security_type is 'stock' or 'bond'
+        """
+        for sec_fibo_id, (sec_type, company_fibo_id) in security_to_company.items():
+            sec_fibo_id_clean = self._escape_string(sec_fibo_id)
+            company_fibo_id_clean = self._escape_string(company_fibo_id)
+            label = "Stock" if sec_type.lower() == "stock" else "Bond"
+
+            query = (
+                f"MATCH (s:{label} {{fibo_id: '{sec_fibo_id_clean}'}}), "
+                f"(c:Company {{fibo_id: '{company_fibo_id_clean}'}}) "
+                f"CREATE (s)-[:ISSUED_BY]->(c);"
+            )
+            self.relationship_statements.append(query)
+
+        logger.debug(f"Added {len(security_to_company)} security ISSUED_BY relationships")
 
     def add_company_relationships(self, relationships: List[Relationship]) -> None:
         """Add relationships between companies and other entities.
