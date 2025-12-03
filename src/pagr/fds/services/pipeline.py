@@ -567,28 +567,58 @@ class ETLPipeline:
                     logger.warning(f"Failed to fetch stock prices: {e}")
                     self.stats.add_error(f"Stock price enrichment failed: {e}")
 
-            # Enrich bond prices
+            # Enrich bond prices using Formula API with batch processing
             if bond_positions:
                 try:
-                    logger.debug(f"Fetching prices for {len(bond_positions)} bonds")
-                    for position in bond_positions:
-                        primary_id_type, primary_id = position.get_primary_identifier()
-                        try:
-                            response = self.factset_client.get_bond_prices(
-                                [primary_id],
-                                id_type=primary_id_type.upper(),
-                            )
+                    logger.debug(f"Fetching prices for {len(bond_positions)} bonds via Formula API")
 
+                    # Group bonds by CUSIP (preferred) and ISIN
+                    cusip_positions = [p for p in bond_positions if p.cusip]
+                    isin_positions = [p for p in bond_positions if not p.cusip and p.isin]
+
+                    # Process CUSIP bonds in batches (up to 10 per request)
+                    if cusip_positions:
+                        batch_size = 10
+                        for i in range(0, len(cusip_positions), batch_size):
+                            batch = cusip_positions[i : i + batch_size]
+                            cusips = [p.cusip for p in batch]
+                            try:
+                                response = self.factset_client.get_bond_prices_formula_api(cusips)
+
+                                # Extract prices from Formula API response
+                                data = response.get("data", {})
+                                for position in batch:
+                                    if position.cusip in data:
+                                        price = data[position.cusip].get("price")
+                                        if price is not None:
+                                            price_map[position.cusip] = (None, float(price))
+                                            logger.debug(f"Got Formula API price for {position.cusip}: {price}")
+                            except Exception as e:
+                                logger.warning(f"Formula API batch call failed for CUSIPs: {e}. Falling back to individual Global Prices calls.")
+                                # Fallback: try Global Prices API for this batch
+                                for position in batch:
+                                    try:
+                                        response = self.factset_client.get_bond_prices([position.cusip], id_type="CUSIP")
+                                        if "data" in response and len(response["data"]) > 0:
+                                            bond_data = response["data"][0]
+                                            price = bond_data.get("price")
+                                            if price is not None:
+                                                price_map[position.cusip] = (None, float(price))
+                                    except Exception as e2:
+                                        logger.debug(f"Could not fetch price for CUSIP {position.cusip}: {e2}")
+
+                    # Process ISIN bonds individually (less common)
+                    for position in isin_positions:
+                        try:
+                            response = self.factset_client.get_bond_prices([position.isin], id_type="ISIN")
                             if "data" in response and len(response["data"]) > 0:
                                 bond_data = response["data"][0]
                                 price = bond_data.get("price")
                                 if price is not None:
-                                    date_str = bond_data.get("priceDate")
-                                    price_map[primary_id] = (date_str, float(price))
+                                    price_map[position.isin] = (None, float(price))
                         except Exception as e:
-                            logger.debug(
-                                f"Could not fetch price for bond {primary_id_type}={primary_id}: {e}"
-                            )
+                            logger.debug(f"Could not fetch price for ISIN {position.isin}: {e}")
+
                 except Exception as e:
                     logger.warning(f"Failed to enrich bond prices: {e}")
                     self.stats.add_error(f"Bond price enrichment failed: {e}")

@@ -403,6 +403,69 @@ class FactSetClient:
                 ]
             }
 
+    def get_bond_prices_formula_api(self, cusips: list[str]) -> dict:
+        """Fetch bond prices using FactSet Formula API.
+
+        Uses the time-series endpoint with price formulas to get bond close prices.
+
+        Args:
+            cusips: List of CUSIP identifiers
+
+        Returns:
+            Dict with format: {"data": {"037833BY5": {"price": 99.843}}}
+
+        Raises:
+            FactSetClientError: If API call fails
+            ValueError: If cusips list is empty
+        """
+        if not cusips:
+            raise ValueError("At least one CUSIP identifier is required")
+
+        logger.info(
+            f"Fetching bond prices via Formula API for {len(cusips)} CUSIP identifiers"
+        )
+
+        # Build comma-separated list of CUSIPs
+        ids_param = ",".join(cusips)
+
+        try:
+            # Make GET request with query parameters
+            response = self._make_request(
+                "GET",
+                "/formula-api/v1/time-series",
+                params={
+                    "ids": ids_param,
+                    "formulas": "price,P_PRICE(0)",
+                    "flatten": "Y",
+                },
+            )
+
+            # Parse response and standardize format
+            standardized = {"data": {}}
+
+            if response.get("data"):
+                for item in response["data"]:
+                    request_id = item.get("requestId")
+                    price = item.get("PRICE")
+
+                    if request_id and price is not None:
+                        standardized["data"][request_id] = {"price": price}
+                        logger.debug(f"Got Formula API price for {request_id}: {price}")
+                    elif request_id:
+                        logger.debug(f"No price data for {request_id} from Formula API")
+
+            logger.info(
+                f"Formula API returned prices for {len(standardized['data'])} of {len(cusips)} CUSIPs"
+            )
+
+            return standardized
+
+        except FactSetClientError:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching bond prices via Formula API: {e}")
+            raise FactSetClientError(f"Formula API error: {e}")
+
     @staticmethod
     def from_credentials_file(
         credentials_file: str = "fds-api.key",

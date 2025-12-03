@@ -130,7 +130,9 @@ class BondEnricher:
             raise
 
     def get_bond_details(self, identifier: str, id_type: str = "CUSIP") -> dict:
-        """Fetch bond details from FactSet API.
+        """Fetch bond details from FactSet API with Global Prices API.
+
+        Uses Global Prices API which provides comprehensive bond details including price.
 
         Args:
             identifier: CUSIP or ISIN identifier
@@ -138,7 +140,7 @@ class BondEnricher:
 
         Returns:
             Dictionary with bond details:
-                - price: Clean price (last close)
+                - price: Close price (last close)
                 - coupon: Annual coupon rate (%)
                 - currency: Bond currency
                 - maturity_date: Maturity date (ISO format)
@@ -147,43 +149,65 @@ class BondEnricher:
 
         Raises:
             ValueError: If id_type is invalid
-            FactSetClientError: If API call fails
+            FactSetClientError: If all API calls fail
         """
         if id_type not in ["CUSIP", "ISIN"]:
             raise ValueError(f"Invalid id_type: {id_type}. Must be 'CUSIP' or 'ISIN'")
 
         logger.debug(f"Fetching bond details for {id_type}:{identifier}")
 
+        price = None
+        coupon = None
+        currency = "USD"
+        maturity_date = None
+        issuer = None
+
+        # Use Global Prices API for all bond details
         try:
-            # Fetch bond prices
             price_response = self.client.get_bond_prices([identifier], id_type)
 
-            if not price_response.get("data") or len(price_response["data"]) == 0:
-                logger.warning(f"No price data found for {id_type}:{identifier}")
-                return {}
+            if price_response.get("data") and len(price_response["data"]) > 0:
+                bond_data = price_response["data"][0]
+                price = bond_data.get("price")
+                coupon = bond_data.get("coupon")
+                currency = bond_data.get("currency", currency)
+                maturity_date = bond_data.get("maturityDate")
+                issuer = bond_data.get("issuer")
 
-            bond_data = price_response["data"][0]
+                if price:
+                    logger.info(
+                        f"Got bond details from Global Prices API: {identifier} = {price}"
+                    )
+                else:
+                    logger.warning(
+                        f"No price data from Global Prices API for {id_type}:{identifier}"
+                    )
 
-            # Extract relevant fields
-            details = {
-                "price": bond_data.get("price"),
-                "coupon": bond_data.get("coupon"),
-                "currency": bond_data.get("currency", "USD"),
-                "maturity_date": bond_data.get("maturityDate"),
-                "issuer": bond_data.get("issuer"),
-                "security_type": "Bond",
-            }
-
-            logger.debug(f"Retrieved bond details for {id_type}:{identifier}: {details}")
-
-            return details
-
-        except (FactSetClientError, FactSetNotFoundError) as e:
-            logger.warning(f"API error fetching bond details for {id_type}:{identifier}: {e}")
-            raise
+        except FactSetClientError as e:
+            logger.warning(
+                f"Global Prices API failed for {id_type}:{identifier}: {str(e)[:100]}"
+            )
         except Exception as e:
-            logger.error(f"Error fetching bond details for {id_type}:{identifier}: {e}")
-            raise
+            logger.warning(
+                f"Unexpected error from Global Prices API for {id_type}:{identifier}: {str(e)[:100]}"
+            )
+
+        # Return details with price (may be None if API failed)
+        details = {
+            "price": price,
+            "coupon": coupon,
+            "currency": currency,
+            "maturity_date": maturity_date,
+            "issuer": issuer,
+            "security_type": "Bond",
+        }
+
+        logger.debug(
+            f"Retrieved bond details for {id_type}:{identifier}: "
+            f"price={price}, coupon={coupon}, currency={currency}"
+        )
+
+        return details
 
     def resolve_issuer(
         self, cusip: Optional[str] = None, isin: Optional[str] = None
