@@ -1,14 +1,34 @@
 # Bond Pricing API Investigation
 
 **Date**: December 3, 2025
-**Status**: Investigating FactSet Fixed Income API versions for bond market pricing
+**Last Updated**: December 3, 2025 (Fix Implemented)
+**Status**: ✅ Fixed - Bonds now display N/A when market pricing unavailable
+
+## Fix Summary (December 3, 2025)
+
+### Changes Implemented
+1. **Removed book_value fallback** - `src/pagr/fds/services/pipeline.py` (lines 326-329)
+   - Previously: `bond.market_price = position.book_value` when API failed
+   - Now: `bond.market_price` stays `None` when API fails
+
+2. **Updated UI display** - `src/pagr/ui/tabular.py` (lines 153-155, 266-268)
+   - Sector drill-down: Shows "N/A" instead of "$0.00" for NULL market values
+   - Country drill-down: Shows "N/A" instead of "$0.00" for NULL market values
+   - Main portfolio: Already displayed "N/A" correctly
+
+### Result
+- **Before Fix**: Bond showed $23,340.00 (book_value fallback)
+- **After Fix**: Bond shows "N/A" (no market pricing available)
+- **Database**: Bond.market_price = None (or NULL in SQL)
+- **User Experience**: Clear indication that market price not available
 
 ## Current Situation
 
 ### Working Implementation
-- **Graph Schema**: Bonds are correctly stored with market_price from book_value fallback
-- **Tests**: All tests confirm bonds are included in sector and country breakdowns
-- **Database**: Bond has market_price = 23,340.00 (using book_value fallback)
+- **Graph Schema**: Bonds correctly stored without artificial market prices
+- **Tests**: All tests confirm bonds included in sector and country breakdowns
+- **Database**: Bond market_price is NULL/None when API unavailable
+- **UI**: Consistently shows "N/A" for missing pricing across all views
 
 ### API Issue
 Currently getting **HTTP 400 Bad Request** from:
@@ -34,13 +54,26 @@ POST /content/factset-global-prices/v1/prices
 - **Status**: Returns 400 Bad Request for CUSIP identifiers
 - **Alternative**: `/content/factset-fixed-income/v1/bond-details` (partial data only)
 
+### Credentials Status
+
+**Investigation Result**: Production credentials were not in `fds-api.key`
+- File contains: `FDS_DEMO_EUR-980739` (demo/sandbox credentials)
+- Demo credentials have **limited API access**: Company Fundamentals API only
+- Fixed Income APIs require additional entitlements not available in demo account
+
 ### v3 Investigation
 
-The user suggested exploring FactSet Fixed Income Calculation API v3. Potential advantages:
-1. **Dedicated Bond Endpoint**: May have better support for bond pricing
-2. **Clean Price Data**: Should provide clean price (not dirty/accrued price)
-3. **Single Call**: Could combine reference data + pricing in one request
-4. **Better CUSIP Support**: v3 might have improved identifier handling
+Attempted to test FactSet Fixed Income API v3, but not accessible with demo credentials:
+- `/content/factset-fixed-income/v1/bond-details` - **Not Found (404)**
+- `/content/factset-fixed-income/v2/prices` - **Not Found (404)**
+- `/content/factset-fixed-income/v3/prices` - **Not Found (404)**
+- `/content/factset-global-prices/v1/prices` - **Bad Request (400)** for bonds
+
+These endpoints would provide:
+1. **Dedicated Bond Endpoint**: Better support for bond pricing
+2. **Clean Price Data**: Clean price (not dirty/accrued price)
+3. **Single Call**: Could combine reference data + pricing
+4. **Better CUSIP Support**: Improved identifier handling
 
 ### Key Questions to Resolve
 
@@ -136,13 +169,28 @@ If migration is needed:
 2. `src/pagr/fds/enrichers/bond_enricher.py` - Update to use new API
 3. `tests/test_bond_enrichment.py` - Add v3 endpoint tests
 
-## Decision Required
+## Decision Made: Show N/A Instead of Fallback
 
-Please confirm which approach to pursue:
-- [ ] Investigate and implement FactSet Fixed Income v3
-- [ ] Debug and fix v1 global prices endpoint
-- [ ] Continue with current v1 Fixed Income API + graceful fallback
-- [ ] Other approach?
+Based on user requirements, implemented the following:
+
+### ✅ What Was Done
+1. Removed book_value fallback from pipeline.py
+2. Updated UI to show "N/A" consistently across all views
+3. Database now stores NULL for market_price when unavailable
+4. Bonds remain queryable and included in portfolio analysis
+
+### Why This Approach
+- **Clarity**: Users see N/A instead of misleading $23,340 price
+- **Honesty**: Indicates pricing data is not available
+- **Consistency**: Same treatment across main and drill-down views
+- **Correctness**: Reflects actual data state in database
+
+### Future Options
+When production credentials with Fixed Income API access are available:
+1. **Option A**: Test Fixed Income v1 API with production account
+2. **Option B**: Migrate to Fixed Income v3 API if available
+3. **Option C**: Implement alternative bond pricing source
+4. **Option D**: Keep current N/A approach if pricing unavailable
 
 ## Notes
 

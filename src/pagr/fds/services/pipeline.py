@@ -323,10 +323,9 @@ class ETLPipeline:
                 # Use primary identifier as key for bonds
                 primary_id_type, primary_id = position.get_primary_identifier()
 
-                # Use book_value as fallback for market_price if enrichment didn't provide it
-                if bond.market_price is None and position.book_value:
-                    bond.market_price = position.book_value
-                    logger.debug(f"  Using book_value as market_price fallback: {position.book_value}")
+                # Do NOT use book_value as fallback - show N/A in UI if no market price from API
+                if bond.market_price is None:
+                    logger.debug(f"  No market price available from FactSet for {primary_id_type}={primary_id}, will display as N/A")
 
                 bonds[primary_id] = bond
                 self.stats.bonds_enriched += 1

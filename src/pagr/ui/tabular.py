@@ -151,7 +151,7 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                         display_sector_pos_df = sector_pos_df.copy()
                         if 'market_value' in display_sector_pos_df.columns:
                             display_sector_pos_df['market_value'] = display_sector_pos_df['market_value'].apply(
-                                lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                                lambda x: f"${x:,.2f}" if pd.notnull(x) and x != 0 else ("N/A" if pd.isnull(x) else "$0.00")
                             )
                         if 'weight' in display_sector_pos_df.columns:
                             display_sector_pos_df['weight'] = display_sector_pos_df['weight'].apply(
@@ -264,7 +264,7 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
                         display_country_pos_df = country_pos_df.copy()
                         if 'market_value' in display_country_pos_df.columns:
                             display_country_pos_df['market_value'] = display_country_pos_df['market_value'].apply(
-                                lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                                lambda x: f"${x:,.2f}" if pd.notnull(x) and x != 0 else ("N/A" if pd.isnull(x) else "$0.00")
                             )
                         if 'weight' in display_country_pos_df.columns:
                             display_country_pos_df['weight'] = display_country_pos_df['weight'].apply(
