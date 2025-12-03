@@ -28,7 +28,8 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                 query_parts = []
                 query_parts.append(f"""
                     MATCH (p:Portfolio {{name: '{portfolio.name}'}})-[:CONTAINS]->(pos:Position)
-                    MATCH (pos)-[:ISSUED_BY]->(c:Company)
+                          -[:INVESTED_IN]->(sec)
+                    OPTIONAL MATCH (sec)-[:ISSUED_BY]->(c:Company)
                     OPTIONAL MATCH (c)-[:HEADQUARTERED_IN]->(country:Country)
                 """)
 
@@ -43,7 +44,7 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                     query_parts.append("OPTIONAL MATCH sub = (n) WHERE 1=0")
 
                 query_parts.append("""
-                    RETURN p, pos, c, country, exec, sub
+                    RETURN p, pos, sec, c, country, exec, sub
                     LIMIT 100
                 """)
 
@@ -71,6 +72,13 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
 
                 # Process records and build graph
                 for record in records:
+                    # Compute IDs for this record upfront
+                    p_id = None
+                    pos_id = None
+                    sec_id = None
+                    c_id = None
+                    country_id = None
+
                     # Portfolio node
                     if record.get('p'):
                         p = record['p']
@@ -88,23 +96,62 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                     # Position node
                     if record.get('pos'):
                         pos = record['pos']
-                        pos_id = f"pos_{pos.get('ticker', 'unknown')}"
+                        # Use ticker for stocks, or ticker+cusip for bonds (to make unique)
+                        ticker = pos.get('ticker') or ''
+                        cusip = pos.get('cusip') or ''
+                        if ticker:
+                            pos_key = ticker  # Stock position
+                        else:
+                            pos_key = f"bond_{cusip}"  # Bond position
+                        pos_id = f"pos_{pos_key}"
                         if pos_id not in nodes_added:
                             market_val = pos.get('market_value', 0)
+                            pos_label = f"{ticker or cusip}\n${market_val:,.0f}"
                             net.add_node(
                                 pos_id,
-                                label=f"{pos.get('ticker', 'unknown')}\n${market_val:,.0f}",
+                                label=pos_label,
                                 color='#4ECDC4',
                                 size=25,
-                                title=f"Position: {pos.get('ticker', 'unknown')}\nMarket Value: ${market_val:,.2f}"
+                                title=f"Position: {ticker or cusip}\nMarket Value: ${market_val:,.2f}\nQuantity: {pos.get('quantity', 0)}"
                             )
                             nodes_added.add(pos_id)
 
                         # Add edge from portfolio to position
-                        edge_id = f"{p_id}_contains_{pos_id}"
-                        if edge_id not in edges_added:
-                            net.add_edge(p_id, pos_id, label='CONTAINS', weight=1)
-                            edges_added.add(edge_id)
+                        if p_id:
+                            edge_id = f"{p_id}_contains_{pos_id}"
+                            if edge_id not in edges_added:
+                                net.add_edge(p_id, pos_id, label='CONTAINS', weight=1)
+                                edges_added.add(edge_id)
+
+                    # Security (Stock/Bond) node
+                    if record.get('sec'):
+                        sec = record['sec']
+                        sec_type = sec.get('labels', ['Security'])[0] if sec.get('labels') else 'Security'
+                        # Use fibo_id for unique identification
+                        sec_fibo = sec.get('fibo_id')
+                        if sec_fibo:
+                            sec_id = f"security_{sec_fibo}"
+                        else:
+                            # Fallback: use ticker or cusip
+                            sec_id = f"security_{sec.get('ticker') or sec.get('cusip') or 'unknown'}"
+
+                        if sec_id not in nodes_added:
+                            sec_label = sec.get('ticker') or sec.get('cusip') or sec.get('isin') or 'Security'
+                            net.add_node(
+                                sec_id,
+                                label=sec_label,
+                                color='#FFE66D',
+                                size=20,
+                                title=f"{sec_type}: {sec_label}"
+                            )
+                            nodes_added.add(sec_id)
+
+                        # Add edge from position to security
+                        if pos_id and sec_id:
+                            edge_id = f"{pos_id}_invested_in_{sec_id}"
+                            if edge_id not in edges_added:
+                                net.add_edge(pos_id, sec_id, label='INVESTED_IN', weight=1)
+                                edges_added.add(edge_id)
 
                     # Company node
                     if record.get('c'):
@@ -120,12 +167,11 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                             )
                             nodes_added.add(c_id)
 
-                        # Add edge from position to company
-                        pos_id = f"pos_{record['pos'].get('ticker', 'unknown')}" if record.get('pos') else None
-                        if pos_id:
-                            edge_id = f"{pos_id}_issued_by_{c_id}"
+                        # Add edge from security to company
+                        if sec_id:
+                            edge_id = f"{sec_id}_issued_by_{c_id}"
                             if edge_id not in edges_added:
-                                net.add_edge(pos_id, c_id, label='ISSUED_BY', weight=2)
+                                net.add_edge(sec_id, c_id, label='ISSUED_BY', weight=2)
                                 edges_added.add(edge_id)
 
                     # Country node
@@ -143,7 +189,6 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                             nodes_added.add(country_id)
 
                         # Add edge from company to country
-                        c_id = f"company_{record['c'].get('factset_id', record['c'].get('ticker', 'unknown'))}" if record.get('c') else None
                         if c_id:
                             edge_id = f"{c_id}_headquartered_in_{country_id}"
                             if edge_id not in edges_added:
@@ -165,7 +210,6 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                             nodes_added.add(exec_id)
 
                         # Add edge from executive to company
-                        c_id = f"company_{record['c'].get('factset_id', record['c'].get('ticker', 'unknown'))}" if record.get('c') else None
                         if c_id:
                             edge_id = f"{exec_id}_ceo_of_{c_id}"
                             if edge_id not in edges_added:
@@ -187,7 +231,6 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
                             nodes_added.add(sub_id)
 
                         # Add edge from company to subsidiary
-                        c_id = f"company_{record['c'].get('factset_id', record['c'].get('ticker', 'unknown'))}" if record.get('c') else None
                         if c_id:
                             edge_id = f"{c_id}_has_subsidiary_{sub_id}"
                             if edge_id not in edges_added:
