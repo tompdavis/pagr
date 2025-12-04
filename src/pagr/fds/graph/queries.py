@@ -5,7 +5,7 @@ Implements Cypher queries for 5 business use cases.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +40,28 @@ class GraphQueries:
     """Cypher query templates for portfolio analysis."""
 
     @staticmethod
-    def sector_exposure(portfolio_name: str) -> str:
-        """Query 1: Sector exposure from portfolio.
+    def sector_exposure(portfolio_names: Union[str, List[str]]) -> str:
+        """Query 1: Sector exposure from portfolio(s).
 
         Returns sectors, total exposure, total weight, number of positions.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company)
+WHERE p.name IN [{names_list}]
 RETURN
     c.sector AS sector,
     SUM(pos.market_value) AS total_exposure,
@@ -64,22 +71,29 @@ ORDER BY total_exposure DESC;
 """.strip()
 
     @staticmethod
-    def country_exposure(portfolio_name: str, country_iso: str) -> str:
+    def country_exposure(portfolio_names: Union[str, List[str]], country_iso: str) -> str:
         """Query 2a: Direct exposure to a country.
 
         Returns companies headquartered in the country.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
             country_iso: ISO code of country (e.g., 'TW', 'US')
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company)-[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
+WHERE p.name IN [{names_list}]
 RETURN
     c.name AS company,
     SUM(pos.market_value) AS exposure,
@@ -113,25 +127,33 @@ ORDER BY exposure DESC;
     # """.strip()
 
     @staticmethod
-    def company_exposure(portfolio_name: str, company_name: str) -> str:
+    def company_exposure(portfolio_names: Union[str, List[str]], company_name: str) -> str:
         """Query 2c: Exposure to a specific company (direct and indirect).
 
         Returns direct holdings and indirect exposure through supply chain.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
             company_name: Name of company
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company {{name: '{company_name}'}})
+WHERE p.name IN [{names_list}]
 WITH SUM(pos.market_value) AS direct_exposure
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(portfolio_company:Company)-[:CUSTOMER_OF]->(:Company {{name: '{company_name}'}})
+WHERE p.name IN [{names_list}]
 WITH direct_exposure, SUM(pos.market_value) AS indirect_exposure
 RETURN
     direct_exposure,
@@ -140,23 +162,30 @@ RETURN
 """.strip()
 
     @staticmethod
-    def sector_region_stress(portfolio_name: str, sector: str, region: str) -> str:
+    def sector_region_stress(portfolio_names: Union[str, List[str]], sector: str, region: str) -> str:
         """Query 3: What if analysis - sector slowdown in region.
 
         Returns companies affected and total exposure.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
             sector: Sector name
             region: Region name
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})-[:HEADQUARTERED_IN]->(country:Country {{region: '{region}'}})
+WHERE p.name IN [{names_list}]
 RETURN
     c.name AS company,
     c.sector AS sector,
@@ -166,21 +195,28 @@ ORDER BY exposure_at_risk DESC;
 """.strip()
 
     @staticmethod
-    def executive_lookup(portfolio_name: str) -> str:
+    def executive_lookup(portfolio_names: Union[str, List[str]]) -> str:
         """Query 4: CEOs of portfolio companies.
 
         Returns executives and their positions.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company)<-[:CEO_OF]-(exec:Executive)
+WHERE p.name IN [{names_list}]
 RETURN
     c.name AS company,
     exec.name AS executive_name,
@@ -190,22 +226,29 @@ ORDER BY position_value DESC;
 """.strip()
 
     @staticmethod
-    def total_company_exposure(portfolio_name: str, company_ticker: str) -> str:
+    def total_company_exposure(portfolio_names: Union[str, List[str]], company_ticker: str) -> str:
         """Query 5: Total exposure to a company including subsidiaries & suppliers.
 
         Returns direct holdings, subsidiary holdings, and supplier exposure.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
             company_ticker: Ticker of company
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company {{ticker: '{company_ticker}'}})
+WHERE p.name IN [{names_list}]
 RETURN
     c.name AS company_name,
     SUM(pos.market_value) AS direct_exposure,
@@ -215,47 +258,62 @@ RETURN
 """.strip()
 
     @staticmethod
-    def sector_positions(portfolio_name: str, sector: str) -> str:
+    def sector_positions(portfolio_names: Union[str, List[str]], sector: str) -> str:
         """Get all positions in a specific sector.
 
         Returns positions invested in companies in the sector.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
             sector: Sector name
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company {{sector: '{sector}'}})
+WHERE p.name IN [{names_list}]
 RETURN
+    p.name AS portfolio_name,
     CASE WHEN sec:Stock THEN sec.ticker ELSE NULL END AS ticker,
     c.name AS company,
     pos.quantity AS quantity,
     pos.market_value AS market_value,
     pos.weight AS weight
-ORDER BY market_value DESC;
+ORDER BY p.name, market_value DESC;
 """.strip()
 
     @staticmethod
-    def country_breakdown(portfolio_name: str) -> str:
+    def country_breakdown(portfolio_names: Union[str, List[str]]) -> str:
         """Get portfolio breakdown by country.
 
         Returns countries and their total exposure and weight.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company)-[:HEADQUARTERED_IN]->(country:Country)
+WHERE p.name IN [{names_list}]
 RETURN
     country.iso_code AS country_code,
     country.name AS country,
@@ -266,29 +324,37 @@ ORDER BY total_exposure DESC;
 """.strip()
 
     @staticmethod
-    def country_positions(portfolio_name: str, country_iso: str) -> str:
+    def country_positions(portfolio_names: Union[str, List[str]], country_iso: str) -> str:
         """Get all positions in companies headquartered in a specific country.
 
         Returns positions invested in companies in the country.
         Uses new graph schema: Position -> INVESTED_IN -> Security -> ISSUED_BY -> Company
 
         Args:
-            portfolio_name: Name of portfolio
+            portfolio_names: Name of portfolio (str) or list of portfolio names
             country_iso: Country ISO code
 
         Returns:
             Cypher query string
         """
+        # Normalize to list
+        if isinstance(portfolio_names, str):
+            portfolio_names = [portfolio_names]
+
+        names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
         return f"""
-MATCH (p:Portfolio {{name: '{portfolio_name}'}})-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
       -[:ISSUED_BY]->(c:Company)-[:HEADQUARTERED_IN]->(:Country {{iso_code: '{country_iso}'}})
+WHERE p.name IN [{names_list}]
 RETURN
+    p.name AS portfolio_name,
     CASE WHEN sec:Stock THEN sec.ticker ELSE NULL END AS ticker,
     c.name AS company,
     pos.quantity AS quantity,
     pos.market_value AS market_value,
     pos.weight AS weight
-ORDER BY market_value DESC;
+ORDER BY p.name, market_value DESC;
 """.strip()
 
 
@@ -327,29 +393,29 @@ class QueryService:
             logger.error(f"Query execution failed: {query_name} - {str(e)}")
             raise
 
-    def sector_exposure(self, portfolio_name: str) -> QueryResult:
+    def sector_exposure(self, portfolio_names: Union[str, List[str]]) -> QueryResult:
         """Execute sector exposure query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
 
         Returns:
             QueryResult with sector exposure data
         """
-        cypher = GraphQueries.sector_exposure(portfolio_name)
+        cypher = GraphQueries.sector_exposure(portfolio_names)
         return self.execute_query("sector_exposure", cypher)
 
-    def country_exposure(self, portfolio_name: str, country_iso: str) -> QueryResult:
+    def country_exposure(self, portfolio_names: Union[str, List[str]], country_iso: str) -> QueryResult:
         """Execute country exposure query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
             country_iso: Country ISO code
 
         Returns:
             QueryResult with country exposure data
         """
-        cypher = GraphQueries.country_exposure(portfolio_name, country_iso)
+        cypher = GraphQueries.country_exposure(portfolio_names, country_iso)
         return self.execute_query("country_exposure", cypher)
 
     # TODO: Add region back in the future
@@ -366,98 +432,98 @@ class QueryService:
     #     cypher = GraphQueries.region_exposure(portfolio_name, region_name)
     #     return self.execute_query("region_exposure", cypher)
 
-    def company_exposure(self, portfolio_name: str, company_name: str) -> QueryResult:
+    def company_exposure(self, portfolio_names: Union[str, List[str]], company_name: str) -> QueryResult:
         """Execute company exposure query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
             company_name: Company name
 
         Returns:
             QueryResult with company exposure data
         """
-        cypher = GraphQueries.company_exposure(portfolio_name, company_name)
+        cypher = GraphQueries.company_exposure(portfolio_names, company_name)
         return self.execute_query("company_exposure", cypher)
 
     def sector_region_stress(
-        self, portfolio_name: str, sector: str, region: str
+        self, portfolio_names: Union[str, List[str]], sector: str, region: str
     ) -> QueryResult:
         """Execute sector-region stress test query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
             sector: Sector name
             region: Region name
 
         Returns:
             QueryResult with stress test data
         """
-        cypher = GraphQueries.sector_region_stress(portfolio_name, sector, region)
+        cypher = GraphQueries.sector_region_stress(portfolio_names, sector, region)
         return self.execute_query("sector_region_stress", cypher)
 
-    def executive_lookup(self, portfolio_name: str) -> QueryResult:
+    def executive_lookup(self, portfolio_names: Union[str, List[str]]) -> QueryResult:
         """Execute executive lookup query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
 
         Returns:
             QueryResult with executive data
         """
-        cypher = GraphQueries.executive_lookup(portfolio_name)
+        cypher = GraphQueries.executive_lookup(portfolio_names)
         return self.execute_query("executive_lookup", cypher)
 
     def total_company_exposure(
-        self, portfolio_name: str, company_ticker: str
+        self, portfolio_names: Union[str, List[str]], company_ticker: str
     ) -> QueryResult:
         """Execute total company exposure query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
             company_ticker: Company ticker
 
         Returns:
             QueryResult with total exposure data
         """
-        cypher = GraphQueries.total_company_exposure(portfolio_name, company_ticker)
+        cypher = GraphQueries.total_company_exposure(portfolio_names, company_ticker)
         return self.execute_query("total_company_exposure", cypher)
 
-    def sector_positions(self, portfolio_name: str, sector: str) -> QueryResult:
+    def sector_positions(self, portfolio_names: Union[str, List[str]], sector: str) -> QueryResult:
         """Execute sector positions query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
             sector: Sector name
 
         Returns:
             QueryResult with positions in the sector
         """
-        cypher = GraphQueries.sector_positions(portfolio_name, sector)
+        cypher = GraphQueries.sector_positions(portfolio_names, sector)
         return self.execute_query("sector_positions", cypher)
 
-    def country_breakdown(self, portfolio_name: str) -> QueryResult:
+    def country_breakdown(self, portfolio_names: Union[str, List[str]]) -> QueryResult:
         """Execute country breakdown query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
 
         Returns:
             QueryResult with country breakdown data
         """
-        cypher = GraphQueries.country_breakdown(portfolio_name)
+        cypher = GraphQueries.country_breakdown(portfolio_names)
         return self.execute_query("country_breakdown", cypher)
 
-    def country_positions(self, portfolio_name: str, country_iso: str) -> QueryResult:
+    def country_positions(self, portfolio_names: Union[str, List[str]], country_iso: str) -> QueryResult:
         """Execute country positions query.
 
         Args:
-            portfolio_name: Portfolio name
+            portfolio_names: Portfolio name (str) or list of portfolio names
             country_iso: Country ISO code
 
         Returns:
             QueryResult with positions in the country
         """
-        cypher = GraphQueries.country_positions(portfolio_name, country_iso)
+        cypher = GraphQueries.country_positions(portfolio_names, country_iso)
         return self.execute_query("country_positions", cypher)
 
     def format_result_table(self, result: QueryResult) -> str:
