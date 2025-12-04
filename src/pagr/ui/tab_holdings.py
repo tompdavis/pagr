@@ -20,8 +20,6 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
         etl_manager: ETLManager instance
         portfolio_manager: PortfolioManager instance
     """
-    st.header("📊 Holdings View")
-
     # Load current portfolio from session (loaded when CSV was uploaded)
     current_portfolio = SessionManager.get_portfolio()
 
@@ -159,7 +157,6 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
                 ):
                     new_selected.append(portfolio_name)
 
-                st.caption(f"Positions: {position_count}")
                 if created_at:
                     st.caption(f"Created: {created_at[:10]}")
                 st.divider()

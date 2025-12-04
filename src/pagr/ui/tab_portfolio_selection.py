@@ -16,8 +16,6 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
         etl_manager: ETLManager instance
         portfolio_manager: PortfolioManager instance
     """
-    st.header("📁 Portfolio Selection")
-
     st.markdown("""
     Upload a new portfolio or manage existing portfolios in the database.
     The database is the system of record - portfolios persist even if the app is restarted.

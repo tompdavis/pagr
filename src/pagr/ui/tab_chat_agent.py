@@ -8,8 +8,6 @@ def display_chat_agent_tab():
 
     This is a placeholder for future LLM-powered portfolio analysis functionality.
     """
-    st.header("💬 Portfolio Chat Agent")
-
     st.info("🚧 This feature is under development and will be available in a future release.")
 
     # Create layout: Left half for chat, right half split for graph and table

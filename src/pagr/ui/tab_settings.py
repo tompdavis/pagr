@@ -40,8 +40,6 @@ def display_settings_tab(etl_manager):
     Args:
         etl_manager: ETLManager instance for connection testing
     """
-    st.header("⚙️ Settings")
-
     # Load config
     config = load_config_yaml()
 
