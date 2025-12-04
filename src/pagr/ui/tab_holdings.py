@@ -136,8 +136,8 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
             # Auto-select all available portfolios on first load
             auto_selected = [p.get("name") for p in available_portfolios if p.get("name")]
             SessionManager.set_selected_portfolios(auto_selected)
-            selected_portfolios = auto_selected
             logger.info(f"Auto-selected portfolios: {auto_selected}")
+            st.rerun()  # Rerun to properly load the auto-selected portfolios
 
         # Portfolio checkboxes
         new_selected = []
