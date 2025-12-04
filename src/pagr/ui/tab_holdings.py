@@ -36,20 +36,47 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
             portfolios = portfolio_manager.list_portfolios()
             if portfolios:
                 first_portfolio_name = portfolios[0].get("name")
-                logger.info(f"Found {len(portfolios)} portfolio(s) in database. Loading first: {first_portfolio_name}")
+                logger.info(f"Found {len(portfolios)} portfolio(s) in database. Reconstructing: {first_portfolio_name}")
 
-                # For now, we need to reconstruct the Portfolio from the database
-                # This is a simplified version - just show available portfolios
-                st.info(f"📌 Found portfolio '{first_portfolio_name}' in database. Go to **Portfolio Selection tab** to re-upload it or manage it.")
-                return
+                # Reconstruct the Portfolio from database
+                current_portfolio = portfolio_manager.reconstruct_portfolio_from_database(first_portfolio_name)
+
+                if current_portfolio:
+                    logger.info(f"Successfully reconstructed portfolio from database: {first_portfolio_name}")
+                    SessionManager.set_portfolio(current_portfolio, None)
+
+                    # Also set up the query service for graph queries
+                    # The query service is needed for tabular/graph views
+                    try:
+                        query_service = etl_manager.query_service
+                        SessionManager.set_query_service(query_service)
+                        logger.info("Query service initialized for reconstructed portfolio")
+                    except Exception as e:
+                        logger.warning(f"Could not initialize query service: {e}")
+
+                    # Auto-select this portfolio
+                    SessionManager.set_selected_portfolios([first_portfolio_name])
+                else:
+                    st.error(f"❌ Failed to reconstruct portfolio '{first_portfolio_name}' from database")
+                    return
             else:
-                st.error("❌ No portfolios found!")
+                st.error("❌ No portfolios found in database!")
                 st.info("📌 Please go to **Portfolio Selection tab** and upload a portfolio CSV file.")
                 return
         except Exception as e:
             logger.error(f"Error loading portfolios from database: {e}")
-            st.error("❌ Error loading portfolios from database")
+            st.error(f"❌ Error loading portfolios from database: {e}")
             return
+
+    # Ensure query service is initialized (needed for graph queries)
+    query_service = SessionManager.get_query_service()
+    if query_service is None:
+        try:
+            query_service = etl_manager.query_service
+            SessionManager.set_query_service(query_service)
+            logger.info("Query service initialized on tab load")
+        except Exception as e:
+            logger.warning(f"Could not initialize query service on tab load: {e}")
 
     # Always refresh available portfolios from database
     available_portfolios = []
@@ -178,6 +205,13 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
 
         # Display portfolio metrics
         display_portfolio_metrics(display_portfolio)
+
+        # DEBUG: Log portfolio state
+        logger.info(f"Display portfolio object: name={display_portfolio.name}, positions count={len(display_portfolio.positions) if display_portfolio.positions else 0}")
+        if display_portfolio.positions:
+            for i, pos in enumerate(display_portfolio.positions[:3]):  # Log first 3 positions
+                logger.debug(f"Position {i}: ticker={pos.ticker}, qty={pos.quantity}, book_value={pos.book_value}")
+
         st.divider()
 
         # View selection
@@ -198,6 +232,7 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
         if view_selection == "Tabular Analysis":
             if query_service:
                 try:
+                    logger.debug(f"Calling display_tabular_view with portfolio: {display_portfolio.name}, positions: {len(display_portfolio.positions) if display_portfolio.positions else 0}")
                     display_tabular_view(display_portfolio, query_service)
                 except Exception as e:
                     st.error(f"Error displaying tabular view: {str(e)}")

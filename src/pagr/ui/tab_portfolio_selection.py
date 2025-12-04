@@ -20,7 +20,11 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
 
     st.markdown("""
     Upload a new portfolio or manage existing portfolios in the database.
+    The database is the system of record - portfolios persist even if the app is restarted.
     """)
+
+    # Refresh portfolio list from database on tab load (database is system of record)
+    _refresh_portfolio_list(portfolio_manager)
 
     st.divider()
 
@@ -186,13 +190,18 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
 def _refresh_portfolio_list(portfolio_manager: PortfolioManager):
     """Refresh the list of available portfolios from database.
 
+    This stores the portfolio list in session state so it persists across tabs.
+    The database is the system of record - portfolios persist even if the app
+    is restarted.
+
     Args:
         portfolio_manager: PortfolioManager instance
     """
     try:
         portfolios = portfolio_manager.list_portfolios()
         SessionManager.set_available_portfolios(portfolios)
-        logger.info(f"Refreshed portfolio list: {len(portfolios)} portfolios found")
+        logger.info(f"Refreshed portfolio list from database: {len(portfolios)} portfolios found")
+        logger.debug(f"Available portfolios: {portfolios}")
     except Exception as e:
         logger.error(f"Error refreshing portfolio list: {e}")
         st.warning(f"Could not refresh portfolio list: {e}")
