@@ -174,40 +174,57 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
             st.info("Please select at least one portfolio to view holdings.")
             return
 
-        # For single portfolio: show all details (backward compatible)
-        # For multiple portfolios: show first portfolio for now with TODO
-        display_portfolio_name = selected_portfolios[0]
+        # Load portfolios for display
         is_multiple = len(selected_portfolios) > 1
 
-        # Determine which portfolio object to display
-        # If it's the current portfolio, use that
-        # Otherwise, we would need to reconstruct from database (TODO for multi-portfolio)
-        if display_portfolio_name == current_portfolio.name:
-            display_portfolio = current_portfolio
+        # Determine which portfolio objects to display
+        display_portfolios = []
+
+        if not is_multiple:
+            # Single portfolio: use current or reconstruct from database
+            if current_portfolio and current_portfolio.name == selected_portfolios[0]:
+                display_portfolios = [current_portfolio]
+            else:
+                # Reconstruct single portfolio from database
+                reconstructed = portfolio_manager.reconstruct_portfolio_from_database(selected_portfolios[0])
+                if reconstructed:
+                    display_portfolios = [reconstructed]
+                    # Update session with reconstructed portfolio
+                    SessionManager.set_portfolio(reconstructed, None)
+                else:
+                    st.error(f"❌ Failed to load portfolio '{selected_portfolios[0]}'")
+                    return
         else:
-            # TODO: Implement multi-portfolio support - reconstruct from database
-            st.warning(
-                f"⚠️ Multi-portfolio view is not yet fully implemented. "
-                f"Showing first selected portfolio: {display_portfolio_name}"
-            )
-            display_portfolio = current_portfolio
+            # Multiple portfolios: load all from database efficiently
+            try:
+                display_portfolios = portfolio_manager.reconstruct_portfolios_from_database(selected_portfolios)
+                if not display_portfolios:
+                    st.error(f"❌ Failed to load {len(selected_portfolios)} portfolios from database")
+                    return
+                logger.info(f"Loaded {len(display_portfolios)} portfolios from database")
+            except Exception as e:
+                logger.error(f"Error loading multiple portfolios: {e}")
+                st.error(f"❌ Error loading portfolios: {e}")
+                return
 
         # Portfolio header
         if is_multiple:
-            header = f"Combined Portfolio View ({len(selected_portfolios)} portfolios selected)"
+            header = f"Combined Portfolio View ({len(display_portfolios)} portfolios selected)"
         else:
-            header = f"Portfolio: {display_portfolio.name}"
+            header = f"Portfolio: {display_portfolios[0].name}"
 
         st.subheader(header)
 
-        # Display portfolio metrics
-        display_portfolio_metrics(display_portfolio)
+        # Display portfolio metrics (first portfolio for now, Phase 4 will add aggregation)
+        display_portfolio_metrics(display_portfolios[0])
 
         # DEBUG: Log portfolio state
-        logger.info(f"Display portfolio object: name={display_portfolio.name}, positions count={len(display_portfolio.positions) if display_portfolio.positions else 0}")
-        if display_portfolio.positions:
-            for i, pos in enumerate(display_portfolio.positions[:3]):  # Log first 3 positions
-                logger.debug(f"Position {i}: ticker={pos.ticker}, qty={pos.quantity}, book_value={pos.book_value}")
+        total_positions = sum(len(p.positions) if p.positions else 0 for p in display_portfolios)
+        logger.info(f"Display portfolios: {[p.name for p in display_portfolios]}, total positions: {total_positions}")
+        for portfolio in display_portfolios[:1]:  # Log first portfolio
+            if portfolio.positions:
+                for i, pos in enumerate(portfolio.positions[:3]):  # Log first 3 positions
+                    logger.debug(f"Position {i}: ticker={pos.ticker}, qty={pos.quantity}, book_value={pos.book_value}")
 
         st.divider()
 
@@ -229,8 +246,9 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
         if view_selection == "Tabular Analysis":
             if query_service:
                 try:
-                    logger.debug(f"Calling display_tabular_view with portfolio: {display_portfolio.name}, positions: {len(display_portfolio.positions) if display_portfolio.positions else 0}")
-                    display_tabular_view(display_portfolio, query_service)
+                    portfolio_names = [p.name for p in display_portfolios]
+                    logger.debug(f"Calling display_tabular_view with portfolios: {portfolio_names}, total positions: {total_positions}")
+                    display_tabular_view(display_portfolios, query_service)
                 except Exception as e:
                     st.error(f"Error displaying tabular view: {str(e)}")
                     logger.exception(f"Tabular view error: {e}")
@@ -239,7 +257,7 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
 
         elif view_selection == "Graph Visualization":
             try:
-                display_graph_view(display_portfolio, etl_manager.memgraph_client)
+                display_graph_view(display_portfolios, etl_manager.memgraph_client)
             except Exception as e:
                 st.error(f"Error displaying graph view: {str(e)}")
                 logger.exception(f"Graph view error: {e}")

@@ -10,8 +10,17 @@ import tempfile
 from pathlib import Path
 
 
-def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
-    """Display interactive graph visualization of portfolio relationships."""
+def display_graph_view(portfolios, memgraph_client: MemgraphClient):
+    """Display interactive graph visualization of portfolio relationships.
+
+    Args:
+        portfolios: Single Portfolio object or list of Portfolio objects
+        memgraph_client: MemgraphClient instance for database queries
+    """
+    # Normalize to list for uniform handling
+    if isinstance(portfolios, Portfolio):
+        portfolios = [portfolios]
+
     st.subheader("Portfolio Graph - FIBO Relationships")
 
     col1, col2 = st.columns([3, 1])
@@ -25,10 +34,14 @@ def display_graph_view(portfolio: Portfolio, memgraph_client: MemgraphClient):
         with st.spinner("Loading graph data..."):
             try:
                 # Build query based on selected options
+                # Extract portfolio names for query
+                portfolio_names = [p.name for p in portfolios]
+                names_list = ", ".join(f"'{name}'" for name in portfolio_names)
+
                 query_parts = []
                 query_parts.append(f"""
-                    MATCH (p:Portfolio {{name: '{portfolio.name}'}})-[:CONTAINS]->(pos:Position)
-                          -[:INVESTED_IN]->(sec)
+                    MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+                    WHERE p.name IN [{names_list}]
                     OPTIONAL MATCH (sec)-[:ISSUED_BY]->(c:Company)
                     OPTIONAL MATCH (c)-[:HEADQUARTERED_IN]->(country:Country)
                 """)

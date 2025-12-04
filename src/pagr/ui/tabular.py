@@ -38,21 +38,31 @@ def _get_security_description(position):
         return "Unknown"
 
 
-def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
-    """Display tabular view with positions and exposure analysis."""
+def display_tabular_view(portfolios, query_service: QueryService):
+    """Display tabular view with positions and exposure analysis.
+
+    Args:
+        portfolios: Single Portfolio object or list of Portfolio objects
+        query_service: QueryService instance for executing graph queries
+    """
+    # Normalize to list for uniform handling
+    if isinstance(portfolios, Portfolio):
+        portfolios = [portfolios]
+
     st.subheader("Positions")
 
     try:
         positions_data = []
-        for pos in portfolio.positions:
-            try:
-                book_value = pos.book_value if hasattr(pos, 'book_value') else 0.0
-                market_value = pos.market_value if hasattr(pos, 'market_value') else None
-                weight = pos.weight if hasattr(pos, 'weight') else 0.0
-                security_type = pos.security_type if hasattr(pos, 'security_type') else "Unknown"
-                security_desc = _get_security_description(pos)
+        for portfolio in portfolios:
+            for pos in portfolio.positions:
+                try:
+                    book_value = pos.book_value if hasattr(pos, 'book_value') else 0.0
+                    market_value = pos.market_value if hasattr(pos, 'market_value') else None
+                    weight = pos.weight if hasattr(pos, 'weight') else 0.0
+                    security_type = pos.security_type if hasattr(pos, 'security_type') else "Unknown"
+                    security_desc = _get_security_description(pos)
 
-                positions_data.append({
+                    positions_data.append({
                     "Security": security_desc,
                     "Type": security_type,
                     "Quantity": pos.quantity,
@@ -77,13 +87,16 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
 
     col1, col2 = st.columns([1, 1])
 
+    # Extract portfolio names for queries
+    portfolio_names = [p.name for p in portfolios]
+
     # Sector Exposure (Left Column)
     with col1:
         st.subheader("Sector Exposure")
         try:
             # Get sector breakdown
             try:
-                sector_result = query_service.sector_exposure(portfolio.name)
+                sector_result = query_service.sector_exposure(portfolio_names)
             except Exception as e:
                 logger.error(f"Error querying sector exposure: {e}")
                 raise UIRenderError(f"Failed to query sector exposure: {str(e)[:100]}", component="Sector Exposure")
@@ -198,7 +211,7 @@ def display_tabular_view(portfolio: Portfolio, query_service: QueryService):
         st.subheader("Geographic Exposure")
         try:
             # Get country breakdown
-            country_result = query_service.country_breakdown(portfolio.name)
+            country_result = query_service.country_breakdown(portfolio_names)
             if country_result and country_result.records:
                 country_data = [dict(record) for record in country_result.records]
                 country_df = pd.DataFrame(country_data)
