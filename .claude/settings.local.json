@@ -3,7 +3,8 @@
     "allow": [
       "Bash(uv run python:*)",
       "Bash(cat:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(uv run streamlit:*)"
     ],
     "deny": [],
     "ask": []
