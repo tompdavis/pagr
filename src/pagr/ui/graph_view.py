@@ -116,7 +116,11 @@ def display_graph_view(portfolios, memgraph_client: MemgraphClient):
                             pos_key = ticker  # Stock position
                         else:
                             pos_key = f"bond_{cusip}"  # Bond position
-                        pos_id = f"pos_{pos_key}"
+
+                        # Make position nodes portfolio-specific by including portfolio name in ID
+                        # This ensures different portfolios have separate Position nodes even for same security
+                        portfolio_name = p.get('name', 'unknown') if record.get('p') else 'unknown'
+                        pos_id = f"pos_{portfolio_name}_{pos_key}"
                         if pos_id not in nodes_added:
                             market_val = pos.get('market_value', 0)
                             pos_label = f"{ticker or cusip}\n${market_val:,.0f}"
