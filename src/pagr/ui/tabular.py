@@ -63,6 +63,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
                     security_desc = _get_security_description(pos)
 
                     positions_data.append({
+                    "Portfolio": portfolio.name,
                     "Security": security_desc,
                     "Type": security_type,
                     "Quantity": pos.quantity,
@@ -172,6 +173,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
                             )
 
                         display_sector_pos_df = display_sector_pos_df.rename(columns={
+                            'portfolio_name': 'Portfolio',
                             'ticker': 'Security',
                             'company': 'Company',
                             'quantity': 'Quantity',
@@ -268,7 +270,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
 
                 # Get positions in selected country
                 if selected_country:
-                    country_pos_result = query_service.country_positions(portfolio.name, selected_country)
+                    country_pos_result = query_service.country_positions(portfolio_names, selected_country)
                     if country_pos_result and country_pos_result.records:
                         country_pos_data = [dict(record) for record in country_pos_result.records]
                         country_pos_df = pd.DataFrame(country_pos_data)
@@ -285,6 +287,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
                             )
 
                         display_country_pos_df = display_country_pos_df.rename(columns={
+                            'portfolio_name': 'Portfolio',
                             'ticker': 'Security',
                             'company': 'Company',
                             'quantity': 'Quantity',
