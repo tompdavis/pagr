@@ -284,3 +284,139 @@ class PortfolioManager:
         except Exception as e:
             logger.error(f"Failed to reconstruct portfolio '{portfolio_name}': {e}")
             return None
+
+    def reconstruct_portfolios_from_database(self, portfolio_names: list):
+        """Reconstruct multiple Portfolio objects from the database efficiently.
+
+        This method loads multiple portfolios in a single query by filtering on multiple
+        portfolio names, then groups the results by portfolio before creating Portfolio objects.
+
+        Args:
+            portfolio_names: List of portfolio names to reconstruct
+
+        Returns:
+            List of Portfolio objects (empty list if none found or error occurs)
+
+        Note: This is more efficient than calling reconstruct_portfolio_from_database
+        multiple times as it uses a single database query with WHERE...IN clause.
+        """
+        try:
+            from pagr.fds.models.portfolio import Portfolio, Position
+
+            logger.info(f"Starting reconstruction of {len(portfolio_names)} portfolios: {portfolio_names}")
+
+            # Ensure connection is established
+            if not self.memgraph_client.is_connected:
+                logger.debug("Memgraph not connected, establishing connection...")
+                self.memgraph_client.connect()
+
+            # Build parameter list for WHERE...IN clause
+            # Query to get all positions for all specified portfolios in one go
+            query = """
+            MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)
+            WHERE p.name IN $portfolio_names
+            OPTIONAL MATCH (pos)-[:INVESTED_IN]->(sec)
+            RETURN
+                p.name AS portfolio_name,
+                p.created_at AS created_at,
+                pos.ticker AS ticker,
+                pos.quantity AS quantity,
+                pos.cost_basis AS cost_basis,
+                pos.market_value AS market_value,
+                pos.security_type AS security_type,
+                pos.isin AS isin,
+                pos.cusip AS cusip,
+                pos.purchase_date AS purchase_date,
+                sec.market_price AS market_price
+            ORDER BY p.name, pos.ticker
+            """
+
+            logger.debug(f"Executing multi-portfolio reconstruction query for: {portfolio_names}")
+            parameters = {"portfolio_names": portfolio_names}
+            results = self.memgraph_client.execute_query(query, parameters)
+            logger.debug(f"Query returned {len(results) if results else 0} results")
+
+            if not results:
+                logger.warning(f"No portfolio data found for: {portfolio_names}")
+                return []
+
+            # Group results by portfolio_name
+            portfolios_dict = {}
+            for record in results:
+                p_name = record.get("portfolio_name")
+
+                # Initialize portfolio entry if this is first record for this portfolio
+                if p_name not in portfolios_dict:
+                    portfolio = Portfolio(name=p_name)
+                    portfolio.created_at = record.get("created_at", "")
+                    portfolios_dict[p_name] = {
+                        "portfolio": portfolio,
+                        "records": []
+                    }
+
+                portfolios_dict[p_name]["records"].append(record)
+
+            # Process each portfolio's records and create Position objects
+            portfolios = []
+            for p_name, data in portfolios_dict.items():
+                portfolio = data["portfolio"]
+                portfolio_records = data["records"]
+                positions = []
+
+                logger.debug(f"Processing {len(portfolio_records)} records for portfolio: {p_name}")
+
+                for i, record in enumerate(portfolio_records):
+                    try:
+                        logger.debug(f"Record {i} for '{p_name}': {record}")
+
+                        # Build position data with required fields having defaults
+                        # Use cost_basis if available, fallback to book_value, then default to 0
+                        cost_basis = record.get("cost_basis")
+                        book_value = record.get("book_value")
+                        final_book_value = cost_basis if cost_basis is not None else (book_value if book_value is not None else 0)
+
+                        position_data = {
+                            "ticker": record.get("ticker") or None,  # Can be None for bonds
+                            "quantity": record.get("quantity", 0),
+                            "book_value": final_book_value,
+                            "security_type": record.get("security_type", "Unknown"),
+                        }
+
+                        # Add optional fields only if they have values
+                        if record.get("isin"):
+                            position_data["isin"] = record.get("isin")
+                        if record.get("cusip"):
+                            position_data["cusip"] = record.get("cusip")
+                        if record.get("purchase_date"):
+                            position_data["purchase_date"] = record.get("purchase_date")
+                        if record.get("market_value") is not None:
+                            position_data["market_value"] = record.get("market_value")
+
+                        logger.debug(f"Position data: {position_data}")
+
+                        position = Position(**position_data)
+                        positions.append(position)
+                        logger.debug(f"Successfully created Position: ticker={position.ticker}, qty={position.quantity}")
+
+                    except ValueError as ve:
+                        logger.error(f"ValueError creating Position for '{p_name}' from record {i}: {ve}. Data was: {position_data}", exc_info=True)
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error reconstructing position for '{p_name}' from record {i}: {e}. Record: {record}", exc_info=True)
+                        continue
+
+                portfolio.positions = positions
+                logger.debug(f"Portfolio '{p_name}' has {len(positions)} positions before calculate_weights()")
+
+                portfolio.calculate_weights()
+                logger.debug(f"Portfolio '{p_name}' has {len(portfolio.positions)} positions after calculate_weights()")
+
+                portfolios.append(portfolio)
+                logger.info(f"Reconstructed portfolio '{p_name}' with {len(positions)} positions from database")
+
+            logger.info(f"Successfully reconstructed {len(portfolios)} portfolios from database")
+            return portfolios
+
+        except Exception as e:
+            logger.error(f"Failed to reconstruct portfolios {portfolio_names}: {e}")
+            return []
