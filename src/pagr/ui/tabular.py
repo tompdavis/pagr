@@ -63,18 +63,18 @@ def display_tabular_view(portfolios, query_service: QueryService):
                     security_desc = _get_security_description(pos)
 
                     positions_data.append({
-                    "Portfolio": portfolio.name,
-                    "Security": security_desc,
-                    "Type": security_type,
-                    "Quantity": pos.quantity,
-                    "Book Value": f"${book_value:,.2f}",
-                    "Market Value (Last Close)": f"${market_value:,.2f}" if market_value else "N/A",
-                    "Weight (%)": f"{weight:.2f}%" if weight else "N/A",
-                })
-            except Exception as e:
-                logger.error(f"Error processing position: {e}")
-                st.warning(f"⚠️ Could not display one position: {str(e)[:100]}")
-                continue
+                        "Portfolio": portfolio.name,
+                        "Security": security_desc,
+                        "Type": security_type,
+                        "Quantity": pos.quantity,
+                        "Book Value": f"${book_value:,.2f}",
+                        "Market Value (Last Close)": f"${market_value:,.2f}" if market_value else "N/A",
+                        "Weight (%)": f"{weight:.2f}%" if weight else "N/A",
+                    })
+                except Exception as e:
+                    logger.error(f"Error processing position: {e}")
+                    st.warning(f"⚠️ Could not display one position: {str(e)[:100]}")
+                    continue
 
         if positions_data:
             df_positions = pd.DataFrame(positions_data)
