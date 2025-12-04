@@ -182,7 +182,7 @@ with tab3:
 # Portfolio Chat Agent Tab
 with tab4:
     from pagr.ui.tab_chat_agent import display_chat_agent_tab
-    display_chat_agent_tab()
+    display_chat_agent_tab(portfolio_manager, etl_manager.query_service)
 
 # Footer
 st.divider()

@@ -1,47 +1,316 @@
-"""Portfolio Chat Agent tab UI component (placeholder)."""
+"""Portfolio Chat Agent tab UI component."""
 
 import streamlit as st
+import logging
+import pandas as pd
+import plotly.express as px
+
+from pagr.session_manager import SessionManager
+from pagr.portfolio_manager import PortfolioManager
+
+logger = logging.getLogger(__name__)
 
 
-def display_chat_agent_tab():
-    """Display placeholder for portfolio chat agent tab.
+def display_chat_agent_tab(portfolio_manager: PortfolioManager, query_service):
+    """Display chat agent tab with portfolio selector and query interface.
 
-    This is a placeholder for future LLM-powered portfolio analysis functionality.
+    Args:
+        portfolio_manager: PortfolioManager instance
+        query_service: QueryService instance for executing graph queries
     """
-    st.info("🚧 This feature is under development and will be available in a future release.")
+    st.info("💬 Portfolio Query Interface\n\nSelect portfolios and run predefined queries. LLM-powered natural language queries coming soon.")
 
-    # Create layout: Left half for chat, right half split for graph and table
-    left_col, right_col = st.columns([1, 1])
+    # Get available portfolios from session
+    available_portfolios = SessionManager.get_available_portfolios()
+    if not available_portfolios:
+        # Try to load from database
+        try:
+            portfolios = portfolio_manager.list_portfolios()
+            SessionManager.set_available_portfolios(portfolios)
+            available_portfolios = portfolios
+        except Exception as e:
+            logger.error(f"Error loading portfolios: {e}")
+            st.error("❌ Could not load portfolios from database")
+            return
+
+    if not available_portfolios:
+        st.warning("📌 No portfolios found. Please upload a portfolio in Portfolio Selection tab.")
+        return
+
+    # Two-column layout: Portfolio selector (left) + Query interface (right)
+    left_col, right_col = st.columns([1, 2])
 
     with left_col:
-        st.subheader("Chat Window")
-        st.info("NOT IMPLEMENTED YET\n\nThis section will contain a chat interface for querying your portfolio with natural language questions.")
+        st.subheader("Portfolios")
+        st.write(f"**Found {len(available_portfolios)} portfolio(s)**")
+
+        # Select All / Deselect All buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✓ Select All", use_container_width=True, key="chat_select_all"):
+                portfolio_names = [p.get("name") for p in available_portfolios if p.get("name")]
+                SessionManager.set_selected_portfolios(portfolio_names)
+                st.rerun()
+
+        with col2:
+            if st.button("✗ Deselect All", use_container_width=True, key="chat_deselect_all"):
+                SessionManager.set_selected_portfolios([])
+                st.rerun()
+
+        st.divider()
+
+        # Get selected portfolios from session
+        selected_portfolios = SessionManager.get_selected_portfolios()
+
+        # Auto-select portfolios if none selected yet
+        if not selected_portfolios and available_portfolios:
+            auto_selected = [p.get("name") for p in available_portfolios if p.get("name")]
+            SessionManager.set_selected_portfolios(auto_selected)
+            selected_portfolios = auto_selected
+
+        # Portfolio checkboxes
+        new_selected = []
+
+        for portfolio in available_portfolios:
+            portfolio_name = portfolio.get("name", "Unknown")
+            created_at = portfolio.get("created_at", "")
+
+            is_checked = portfolio_name in selected_portfolios
+
+            if st.checkbox(
+                f"{portfolio_name}",
+                value=is_checked,
+                key=f"chat_portfolio_checkbox_{portfolio_name}"
+            ):
+                new_selected.append(portfolio_name)
+
+            if created_at:
+                st.caption(f"Created: {created_at[:10]}")
+            st.divider()
+
+        # Update selected portfolios if changed
+        if new_selected != selected_portfolios:
+            SessionManager.set_selected_portfolios(new_selected)
+            st.rerun()
 
     with right_col:
-        top_col, bottom_col = st.columns([1, 1])
+        st.subheader("Query Builder")
 
-        with top_col:
-            st.subheader("Graph View")
-            st.info("NOT IMPLEMENTED YET\n\nThis section will display graph visualizations resulting from chat queries.")
+        # Get selected portfolios
+        selected_portfolios = SessionManager.get_selected_portfolios()
 
-        with bottom_col:
-            st.subheader("Tabular View")
-            st.info("NOT IMPLEMENTED YET\n\nThis section will display tabular data resulting from chat queries.")
+        if not selected_portfolios:
+            st.info("Please select at least one portfolio to run queries.")
+            return
 
-    st.divider()
+        # Query type selector
+        query_type = st.selectbox(
+            "Select Query Type",
+            [
+                "Sector Exposure",
+                "Country Exposure",
+                "Country Positions",
+                "Sector Positions",
+                "Executive Lookup"
+            ],
+            help="Choose the type of portfolio analysis to run"
+        )
 
-    st.markdown("""
-    ### Planned Features
-    - Natural language querying of portfolio data
-    - LLM-powered analysis of portfolio exposures
-    - Interactive graph and table visualizations
-    - Scenario analysis through conversation
-    - Portfolio insights and recommendations
+        st.divider()
 
-    ### Development Status
-    - [ ] LLM provider integration (Ollama/OpenAI)
-    - [ ] Natural language to Cypher translation
-    - [ ] Chat history management
-    - [ ] Query result visualization
-    - [ ] Portfolio insight generation
-    """)
+        # Run query based on selected type
+        if query_type == "Sector Exposure":
+            _display_sector_exposure(query_service, selected_portfolios)
+
+        elif query_type == "Country Exposure":
+            _display_country_exposure(query_service, selected_portfolios)
+
+        elif query_type == "Country Positions":
+            _display_country_positions(query_service, selected_portfolios)
+
+        elif query_type == "Sector Positions":
+            _display_sector_positions(query_service, selected_portfolios)
+
+        elif query_type == "Executive Lookup":
+            _display_executive_lookup(query_service, selected_portfolios)
+
+
+def _display_sector_exposure(query_service, portfolio_names):
+    """Display sector exposure query results."""
+    try:
+        result = query_service.sector_exposure(portfolio_names)
+        if result and result.records:
+            df = pd.DataFrame([dict(r) for r in result.records])
+
+            # Format for display
+            display_df = df.copy()
+            if 'total_exposure' in display_df.columns:
+                display_df['total_exposure'] = display_df['total_exposure'].apply(
+                    lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                )
+            if 'total_weight' in display_df.columns:
+                display_df['total_weight'] = display_df['total_weight'].apply(
+                    lambda x: f"{x:.2f}%" if pd.notnull(x) else "0%"
+                )
+
+            st.write("**Sector Breakdown**")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            # Chart
+            if 'sector' in df.columns and 'total_exposure' in df.columns:
+                fig = px.bar(
+                    df,
+                    x='sector',
+                    y='total_exposure',
+                    title='Exposure by Sector',
+                    labels={'total_exposure': 'Market Exposure ($)', 'sector': 'Sector'}
+                )
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No sector data available")
+    except Exception as e:
+        st.error(f"Error running sector exposure query: {str(e)}")
+        logger.exception(f"Sector exposure error: {e}")
+
+
+def _display_country_exposure(query_service, portfolio_names):
+    """Display country exposure query results."""
+    try:
+        # Get list of countries first
+        country_breakdown = query_service.country_breakdown(portfolio_names)
+        if country_breakdown and country_breakdown.records:
+            countries = [r.get('country_code') for r in country_breakdown.records if r.get('country_code')]
+
+            if not countries:
+                st.info("No country data available")
+                return
+
+            selected_country = st.selectbox("Select Country", countries, key="chat_country_select")
+
+            if selected_country:
+                result = query_service.country_exposure(portfolio_names, selected_country)
+                if result and result.records:
+                    df = pd.DataFrame([dict(r) for r in result.records])
+
+                    # Format for display
+                    display_df = df.copy()
+                    if 'exposure' in display_df.columns:
+                        display_df['exposure'] = display_df['exposure'].apply(
+                            lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                        )
+
+                    st.write(f"**Exposure in {selected_country}**")
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"No exposure data for {selected_country}")
+        else:
+            st.info("No country data available")
+    except Exception as e:
+        st.error(f"Error running country exposure query: {str(e)}")
+        logger.exception(f"Country exposure error: {e}")
+
+
+def _display_country_positions(query_service, portfolio_names):
+    """Display country positions query results."""
+    try:
+        # Get list of countries first
+        country_breakdown = query_service.country_breakdown(portfolio_names)
+        if country_breakdown and country_breakdown.records:
+            countries = [r.get('country_code') for r in country_breakdown.records if r.get('country_code')]
+
+            if not countries:
+                st.info("No country data available")
+                return
+
+            selected_country = st.selectbox("Select Country", countries, key="chat_country_positions_select")
+
+            if selected_country:
+                result = query_service.country_positions(portfolio_names, selected_country)
+                if result and result.records:
+                    df = pd.DataFrame([dict(r) for r in result.records])
+
+                    # Format for display
+                    display_df = df.copy()
+                    if 'market_value' in display_df.columns:
+                        display_df['market_value'] = display_df['market_value'].apply(
+                            lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                        )
+                    if 'weight' in display_df.columns:
+                        display_df['weight'] = display_df['weight'].apply(
+                            lambda x: f"{x:.2f}%" if pd.notnull(x) else "0%"
+                        )
+
+                    st.write(f"**Positions in {selected_country}**")
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"No positions in {selected_country}")
+        else:
+            st.info("No country data available")
+    except Exception as e:
+        st.error(f"Error running country positions query: {str(e)}")
+        logger.exception(f"Country positions error: {e}")
+
+
+def _display_sector_positions(query_service, portfolio_names):
+    """Display sector positions query results."""
+    try:
+        # Get list of sectors first
+        sector_exposure = query_service.sector_exposure(portfolio_names)
+        if sector_exposure and sector_exposure.records:
+            sectors = [r.get('sector') for r in sector_exposure.records if r.get('sector')]
+
+            if not sectors:
+                st.info("No sector data available")
+                return
+
+            selected_sector = st.selectbox("Select Sector", sectors, key="chat_sector_select")
+
+            if selected_sector:
+                result = query_service.sector_positions(portfolio_names, selected_sector)
+                if result and result.records:
+                    df = pd.DataFrame([dict(r) for r in result.records])
+
+                    # Format for display
+                    display_df = df.copy()
+                    if 'market_value' in display_df.columns:
+                        display_df['market_value'] = display_df['market_value'].apply(
+                            lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                        )
+                    if 'weight' in display_df.columns:
+                        display_df['weight'] = display_df['weight'].apply(
+                            lambda x: f"{x:.2f}%" if pd.notnull(x) else "0%"
+                        )
+
+                    st.write(f"**Positions in {selected_sector}**")
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"No positions in {selected_sector}")
+        else:
+            st.info("No sector data available")
+    except Exception as e:
+        st.error(f"Error running sector positions query: {str(e)}")
+        logger.exception(f"Sector positions error: {e}")
+
+
+def _display_executive_lookup(query_service, portfolio_names):
+    """Display executive lookup query results."""
+    try:
+        result = query_service.executive_lookup(portfolio_names)
+        if result and result.records:
+            df = pd.DataFrame([dict(r) for r in result.records])
+
+            # Format for display
+            display_df = df.copy()
+            if 'position_value' in display_df.columns:
+                display_df['position_value'] = display_df['position_value'].apply(
+                    lambda x: f"${x:,.2f}" if pd.notnull(x) else "$0.00"
+                )
+
+            st.write("**Portfolio Company Executives**")
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No executive data available")
+    except Exception as e:
+        st.error(f"Error running executive lookup query: {str(e)}")
+        logger.exception(f"Executive lookup error: {e}")
