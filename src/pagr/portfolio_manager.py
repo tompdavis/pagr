@@ -76,7 +76,10 @@ class PortfolioManager:
             return []
 
     def delete_portfolio(self, portfolio_name: str) -> bool:
-        """Delete portfolio and all related data from database.
+        """Delete portfolio and all related positions from database.
+
+        Removes the Portfolio node and all its Position nodes (which are portfolio-specific).
+        Preserves Company, Country, Stock, and Bond nodes (which are shared across portfolios).
 
         Args:
             portfolio_name: Name of portfolio to delete
@@ -90,10 +93,11 @@ class PortfolioManager:
                 self.memgraph_client.connect()
 
             # Query to delete portfolio and all related nodes/relationships
-            # This uses DETACH DELETE to cascade delete all relationships
+            # Explicitly delete Position nodes (which are portfolio-specific)
+            # Preserves Stock, Bond, Company, Country nodes (which are shared)
             query = """
-                MATCH (p:Portfolio {name: $portfolio_name})
-                DETACH DELETE p
+                MATCH (p:Portfolio {name: $portfolio_name})-[:CONTAINS]->(pos:Position)
+                DETACH DELETE p, pos
             """
 
             parameters = {"portfolio_name": portfolio_name}
@@ -104,6 +108,36 @@ class PortfolioManager:
 
         except Exception as e:
             logger.error(f"Failed to delete portfolio '{portfolio_name}': {e}")
+            return False
+
+    def delete_all_portfolios(self) -> bool:
+        """Delete all portfolios and their positions from database.
+
+        Removes all Portfolio nodes and their related Position nodes (which are portfolio-specific).
+        Preserves Company, Country, Stock, and Bond nodes (which are shared reference data).
+
+        Returns:
+            True if successfully deleted, False if error
+        """
+        try:
+            # Ensure connection is established
+            if not self.memgraph_client.is_connected:
+                self.memgraph_client.connect()
+
+            # Query to delete all portfolios and their positions
+            # Preserves Company, Country, Stock, Bond, Executive nodes (which are shared)
+            query = """
+                MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)
+                DETACH DELETE p, pos
+            """
+
+            self.memgraph_client.execute_query(query)
+
+            logger.info("Successfully deleted all portfolios and positions")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete all portfolios: {e}")
             return False
 
     def get_portfolio_metadata(self, portfolio_name: str) -> Optional[Dict[str, Any]]:

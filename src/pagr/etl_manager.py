@@ -167,9 +167,6 @@ class ETLManager:
             if not self.memgraph_client.is_connected:
                 self.memgraph_client.connect()
 
-            # Clear existing data from database
-            self.clear_database()
-
             portfolio_loader = PortfolioLoader()
             graph_builder = GraphBuilder()
 

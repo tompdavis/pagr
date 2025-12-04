@@ -2,6 +2,7 @@
 
 import streamlit as st
 import logging
+from pathlib import Path
 
 from pagr.session_manager import SessionManager
 from pagr.portfolio_manager import PortfolioManager
@@ -56,52 +57,74 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
             if current_file != uploaded_file.name:
                 SessionManager.set_current_file(uploaded_file.name)
 
-                with st.spinner("Processing portfolio through ETL pipeline..."):
-                    try:
-                        # Check Memgraph connection
-                        if not etl_manager.check_connection():
-                            st.error(
-                                "Cannot connect to Memgraph database. "
-                                "Please ensure Memgraph is running on 127.0.0.1:7687"
-                            )
-                        else:
-                            # Process CSV
-                            portfolio, stats = etl_manager.process_uploaded_csv(uploaded_file)
-                            logger.info(f"Portfolio object created: name={portfolio.name}, positions={len(portfolio.positions)}")
+                # Extract portfolio name from CSV filename (before ETL)
+                portfolio_name = Path(uploaded_file.name).stem
 
-                            SessionManager.set_portfolio(portfolio, stats)
-                            SessionManager.set_query_service(etl_manager.query_service)
+                # Check if portfolio already exists in database
+                try:
+                    existing_portfolios = portfolio_manager.list_portfolios()
+                    existing_names = [p.get("name") for p in existing_portfolios]
 
-                            logger.info(f"Portfolio stored in session state. Retrieving to verify...")
-                            stored_portfolio = SessionManager.get_portfolio()
-                            logger.info(f"Verification: retrieved portfolio = {stored_portfolio.name if stored_portfolio else 'NONE'}")
+                    if portfolio_name in existing_names:
+                        st.error(
+                            f"❌ Portfolio '{portfolio_name}' already exists. "
+                            f"Please delete it first or rename your CSV file."
+                        )
+                        logger.warning(f"Attempted to upload duplicate portfolio: {portfolio_name}")
+                        SessionManager.set_current_file(None)
+                    else:
+                        # Portfolio name is unique, proceed with ETL
+                        with st.spinner("Processing portfolio through ETL pipeline..."):
+                            try:
+                                # Check Memgraph connection
+                                if not etl_manager.check_connection():
+                                    st.error(
+                                        "Cannot connect to Memgraph database. "
+                                        "Please ensure Memgraph is running on 127.0.0.1:7687"
+                                    )
+                                else:
+                                    # Process CSV
+                                    portfolio, stats = etl_manager.process_uploaded_csv(uploaded_file)
+                                    logger.info(f"Portfolio object created: name={portfolio.name}, positions={len(portfolio.positions)}")
 
-                            # Show success message
-                            st.success(f"✅ Portfolio '{portfolio.name}' successfully loaded!")
+                                    SessionManager.set_portfolio(portfolio, stats)
+                                    SessionManager.set_query_service(etl_manager.query_service)
 
-                            # Show pipeline statistics in expander
-                            with st.expander("Pipeline Statistics", expanded=False):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.metric("Positions Loaded", stats.positions_loaded)
-                                    st.metric("Companies Enriched", stats.companies_enriched)
-                                    st.metric("Companies Failed", stats.companies_failed)
-                                with col2:
-                                    st.metric("Executives", stats.executives_enriched)
-                                    st.metric("Countries", stats.countries_enriched)
-                                    st.metric("Graph Nodes", stats.graph_nodes_created)
+                                    logger.info(f"Portfolio stored in session state. Retrieving to verify...")
+                                    stored_portfolio = SessionManager.get_portfolio()
+                                    logger.info(f"Verification: retrieved portfolio = {stored_portfolio.name if stored_portfolio else 'NONE'}")
 
-                                if stats.errors:
-                                    with st.expander("Errors"):
-                                        for error in stats.errors[:5]:
-                                            st.warning(error)
+                                    # Show success message
+                                    st.success(f"✅ Portfolio '{portfolio.name}' successfully loaded!")
 
-                            # Refresh portfolio list
-                            _refresh_portfolio_list(portfolio_manager)
+                                    # Show pipeline statistics in expander
+                                    with st.expander("Pipeline Statistics", expanded=False):
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.metric("Positions Loaded", stats.positions_loaded)
+                                            st.metric("Companies Enriched", stats.companies_enriched)
+                                            st.metric("Companies Failed", stats.companies_failed)
+                                        with col2:
+                                            st.metric("Executives", stats.executives_enriched)
+                                            st.metric("Countries", stats.countries_enriched)
+                                            st.metric("Graph Nodes", stats.graph_nodes_created)
 
-                    except Exception as e:
-                        st.error(f"Error processing portfolio: {str(e)}")
-                        logger.exception(f"Portfolio processing error: {e}")
+                                        if stats.errors:
+                                            with st.expander("Errors"):
+                                                for error in stats.errors[:5]:
+                                                    st.warning(error)
+
+                                    # Refresh portfolio list
+                                    _refresh_portfolio_list(portfolio_manager)
+                                    st.rerun()
+
+                            except Exception as e:
+                                st.error(f"Error processing portfolio: {str(e)}")
+                                logger.exception(f"Portfolio processing error: {e}")
+
+                except Exception as e:
+                    st.error(f"Error checking for duplicate portfolios: {str(e)}")
+                    logger.exception(f"Duplicate check error: {e}")
 
     else:  # OFDB from FactSet
         st.warning("🚧 OFDB import from FactSet is not implemented yet. This feature will be available in a future release.")
@@ -115,6 +138,39 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
     if st.button("🔄 Refresh Portfolio List", use_container_width=True):
         _refresh_portfolio_list(portfolio_manager)
         st.rerun()
+
+    # Clear All button
+    if st.button("🗑️ Clear All Portfolios", use_container_width=True, type="secondary"):
+        # Store flag in session state to show confirmation
+        st.session_state["show_clear_all_confirm"] = True
+
+    # Confirmation dialog
+    if st.session_state.get("show_clear_all_confirm", False):
+        st.warning("⚠️ This will delete ALL portfolios and positions. Reference data (companies, countries) will be preserved.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✓ Confirm Clear All", use_container_width=True, type="primary"):
+                with st.spinner("Clearing all portfolios..."):
+                    try:
+                        if portfolio_manager.delete_all_portfolios():
+                            st.success("✅ All portfolios cleared successfully!")
+                            _refresh_portfolio_list(portfolio_manager)
+                            # Clear session state
+                            SessionManager.set_portfolio(None, None)
+                            SessionManager.set_selected_portfolios([])
+                            st.session_state["show_clear_all_confirm"] = False
+                            st.rerun()
+                        else:
+                            st.error("Failed to clear portfolios")
+                    except Exception as e:
+                        st.error(f"Error clearing portfolios: {str(e)}")
+                        logger.exception(f"Clear all error: {e}")
+
+        with col2:
+            if st.button("✗ Cancel", use_container_width=True):
+                st.session_state["show_clear_all_confirm"] = False
+                st.rerun()
 
     st.divider()
 
