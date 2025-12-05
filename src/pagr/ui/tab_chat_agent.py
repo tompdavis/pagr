@@ -6,7 +6,10 @@ import pandas as pd
 import plotly.express as px
 
 from pagr.session_manager import SessionManager
+from pagr.portfolio_loader import PortfolioLoader
+from pagr.portfolio_analysis_service import PortfolioAnalysisService
 from pagr.portfolio_manager import PortfolioManager
+from pagr.ui.components import display_portfolio_selector
 
 logger = logging.getLogger(__name__)
 
@@ -20,78 +23,33 @@ def display_chat_agent_tab(portfolio_manager: PortfolioManager, query_service):
     """
     st.info("💬 Portfolio Query Interface\n\nSelect portfolios and run predefined queries. LLM-powered natural language queries coming soon.")
 
-    # Get available portfolios from session
-    available_portfolios = SessionManager.get_available_portfolios()
-    if not available_portfolios:
-        # Try to load from database
-        try:
-            portfolios = portfolio_manager.list_portfolios()
-            SessionManager.set_available_portfolios(portfolios)
-            available_portfolios = portfolios
-        except Exception as e:
-            logger.error(f"Error loading portfolios: {e}")
-            st.error("❌ Could not load portfolios from database")
+    # Initialize services
+    portfolio_loader = PortfolioLoader(portfolio_manager)
+
+    # Get and display available portfolios
+    try:
+        available_portfolios = portfolio_loader.get_available_portfolios(force_refresh=False)
+
+        if not available_portfolios:
+            st.warning("📌 No portfolios found. Please upload a portfolio in Portfolio Selection tab.")
             return
 
-    if not available_portfolios:
-        st.warning("📌 No portfolios found. Please upload a portfolio in Portfolio Selection tab.")
+    except Exception as e:
+        logger.error(f"Error loading portfolios: {e}")
+        st.error("❌ Could not load portfolios from database")
         return
 
+    # Initialize analysis service
+    analysis_service = PortfolioAnalysisService(query_service) if query_service else None
+
     # Two-column layout: Portfolio selector (left) + Query interface (right)
+    selected_portfolios = display_portfolio_selector(
+        available_portfolios,
+        column_width=(1, 2),
+        key_prefix="chat_portfolio_selector",
+    )
+
     left_col, right_col = st.columns([1, 2])
-
-    with left_col:
-        st.subheader("Portfolios")
-        st.write(f"**Found {len(available_portfolios)} portfolio(s)**")
-
-        # Select All / Deselect All buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✓ Select All", use_container_width=True, key="chat_select_all"):
-                portfolio_names = [p.get("name") for p in available_portfolios if p.get("name")]
-                SessionManager.set_selected_portfolios(portfolio_names)
-                st.rerun()
-
-        with col2:
-            if st.button("✗ Deselect All", use_container_width=True, key="chat_deselect_all"):
-                SessionManager.set_selected_portfolios([])
-                st.rerun()
-
-        st.divider()
-
-        # Get selected portfolios from session
-        selected_portfolios = SessionManager.get_selected_portfolios()
-
-        # Auto-select portfolios if none selected yet
-        if not selected_portfolios and available_portfolios:
-            auto_selected = [p.get("name") for p in available_portfolios if p.get("name")]
-            SessionManager.set_selected_portfolios(auto_selected)
-            st.rerun()  # Rerun to properly load the auto-selected portfolios
-
-        # Portfolio checkboxes
-        new_selected = []
-
-        for portfolio in available_portfolios:
-            portfolio_name = portfolio.get("name", "Unknown")
-            created_at = portfolio.get("created_at", "")
-
-            is_checked = portfolio_name in selected_portfolios
-
-            if st.checkbox(
-                f"{portfolio_name}",
-                value=is_checked,
-                key=f"chat_portfolio_checkbox_{portfolio_name}"
-            ):
-                new_selected.append(portfolio_name)
-
-            if created_at:
-                st.caption(f"Created: {created_at[:10]}")
-            st.divider()
-
-        # Update selected portfolios if changed
-        if new_selected != selected_portfolios:
-            SessionManager.set_selected_portfolios(new_selected)
-            st.rerun()
 
     with right_col:
         st.subheader("Query Builder")

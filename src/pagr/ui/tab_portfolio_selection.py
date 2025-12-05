@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from pagr.session_manager import SessionManager
+from pagr.session_state import SessionStateKeys
 from pagr.portfolio_manager import PortfolioManager
 
 logger = logging.getLogger(__name__)
@@ -152,10 +153,10 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
     # Clear All button
     if st.button("🗑️ Clear All Portfolios", use_container_width=True, type="secondary"):
         # Store flag in session state to show confirmation
-        st.session_state["show_clear_all_confirm"] = True
+        st.session_state[SessionStateKeys.SHOW_CLEAR_ALL_CONFIRM.value] = True
 
     # Confirmation dialog
-    if st.session_state.get("show_clear_all_confirm", False):
+    if st.session_state.get(SessionStateKeys.SHOW_CLEAR_ALL_CONFIRM.value, False):
         st.warning("⚠️ This will delete ALL data from the database (complete wipe). You will need to re-upload portfolios.")
 
         col1, col2 = st.columns(2)
@@ -169,7 +170,7 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
                             # Clear session state
                             SessionManager.set_portfolio(None, None)
                             SessionManager.set_selected_portfolios([])
-                            st.session_state["show_clear_all_confirm"] = False
+                            st.session_state[SessionStateKeys.SHOW_CLEAR_ALL_CONFIRM.value] = False
                             st.rerun()
                         else:
                             st.error("Failed to clear portfolios")
@@ -179,7 +180,7 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
 
         with col2:
             if st.button("✗ Cancel", use_container_width=True):
-                st.session_state["show_clear_all_confirm"] = False
+                st.session_state[SessionStateKeys.SHOW_CLEAR_ALL_CONFIRM.value] = False
                 st.rerun()
 
     st.divider()
@@ -213,10 +214,12 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
                 delete_key = f"delete_{portfolio_name}"
                 if st.button("🗑️", key=delete_key, use_container_width=True, help="Delete portfolio"):
                     # Store which portfolio is pending deletion in session state
-                    st.session_state[f"show_delete_confirm_{portfolio_name}"] = True
+                    confirm_state_key = f"{SessionStateKeys.SHOW_DELETE_CONFIRM_PREFIX.value}{portfolio_name}"
+                    st.session_state[confirm_state_key] = True
 
             # Show confirmation dialog if this portfolio is pending deletion
-            if st.session_state.get(f"show_delete_confirm_{portfolio_name}", False):
+            confirm_state_key = f"{SessionStateKeys.SHOW_DELETE_CONFIRM_PREFIX.value}{portfolio_name}"
+            if st.session_state.get(confirm_state_key, False):
                 col_confirm1, col_confirm2 = st.columns(2)
 
                 with col_confirm1:
@@ -231,7 +234,7 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
                                     st.success(f"✅ Portfolio '{portfolio_name}' deleted successfully!")
                                     _refresh_portfolio_list(portfolio_manager)
                                     # Clear the confirmation state
-                                    st.session_state[f"show_delete_confirm_{portfolio_name}"] = False
+                                    st.session_state[confirm_state_key] = False
                                     st.rerun()
                                 else:
                                     st.error(f"Failed to delete portfolio '{portfolio_name}'")
@@ -246,7 +249,7 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
                         use_container_width=True
                     ):
                         # Clear the confirmation state
-                        st.session_state[f"show_delete_confirm_{portfolio_name}"] = False
+                        st.session_state[confirm_state_key] = False
                         st.rerun()
 
     else:

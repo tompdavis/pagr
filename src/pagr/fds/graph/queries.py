@@ -370,12 +370,15 @@ class QueryService:
         self.graph_client = graph_client
         logger.info("Initialized QueryService")
 
-    def execute_query(self, query_name: str, cypher: str) -> QueryResult:
-        """Execute a Cypher query.
+    def execute_query(
+        self, query_name: str, cypher: str, parameters: Optional[Dict[str, Any]] = None
+    ) -> QueryResult:
+        """Execute a Cypher query with optional parameters.
 
         Args:
             query_name: Name of query for logging
             cypher: Cypher query string
+            parameters: Optional query parameters dict (e.g., {"portfolio_names": ["Port1", "Port2"]})
 
         Returns:
             QueryResult with records and metadata
@@ -385,7 +388,11 @@ class QueryService:
         """
         try:
             logger.debug(f"Executing query: {query_name}")
-            records = self.graph_client.execute_query(cypher)
+            if parameters:
+                logger.debug(f"Query parameters: {parameters}")
+                records = self.graph_client.execute_query(cypher, parameters)
+            else:
+                records = self.graph_client.execute_query(cypher)
             logger.debug(f"Query returned {len(records)} records")
             return QueryResult(query_name=query_name, cypher=cypher, records=records)
 
