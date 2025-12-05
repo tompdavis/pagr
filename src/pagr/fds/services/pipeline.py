@@ -158,10 +158,17 @@ class ETLPipeline:
                 f"[{idx+1}/{len(positions)}] Enriching position: {primary_id_type}={primary_id}"
             )
 
+            # DEBUG: Log routing decision for every position
+            logger.debug(
+                f"  Position routing: ticker='{position.ticker}', cusip='{position.cusip}', "
+                f"isin='{position.isin}', security_type='{position.security_type}'"
+            )
+
             try:
                 # Route to stock or bond enrichment based on identifier type
                 if position.ticker:
                     # Stock enrichment (existing flow)
+                    logger.debug(f"  → Routing to STOCK enrichment (ticker present)")
                     self._enrich_stock_position(
                         position,
                         primary_id,
@@ -174,6 +181,7 @@ class ETLPipeline:
                     )
                 else:
                     # Bond enrichment (new flow)
+                    logger.debug(f"  → Routing to BOND enrichment (no ticker, using {primary_id_type})")
                     self._enrich_bond_position(
                         position,
                         bond_enricher,
