@@ -467,7 +467,7 @@ class ETLPipeline:
 
             # Add INVESTED_IN relationships (Position -> Security)
             if position_to_security:
-                self.graph_builder.add_invested_in_relationships(position_to_security)
+                self.graph_builder.add_invested_in_relationships(position_to_security, portfolio.name)
                 self.stats.graph_relationships_created += len(position_to_security)
 
             # Build Security -> Company mappings for ISSUED_BY relationships

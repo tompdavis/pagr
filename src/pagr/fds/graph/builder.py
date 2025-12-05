@@ -100,6 +100,7 @@ class GraphBuilder:
 
             position_query = (
                 f"CREATE (pos_{ticker_var}:Position {{"
+                f"portfolio_name: '{portfolio_name_escaped}', "
                 f"ticker: '{ticker}', "
                 f"quantity: {quantity}, "
                 f"security_type: '{security_type}', "
@@ -114,7 +115,7 @@ class GraphBuilder:
             # Create CONTAINS relationship
             contains_query = (
                 f"MATCH (p:Portfolio {{name: '{portfolio_name_escaped}'}}), "
-                f"(pos:Position {{ticker: '{ticker}'}}) "
+                f"(pos:Position {{portfolio_name: '{portfolio_name_escaped}', ticker: '{ticker}'}}) "
                 f"CREATE (p)-[:CONTAINS {{weight: {weight}}}]->(pos);"
             )
             self.relationship_statements.append(contains_query)
@@ -332,7 +333,7 @@ class GraphBuilder:
         logger.debug(f"Added {len(position_to_security)} HOLDS relationships")
 
     def add_invested_in_relationships(
-        self, position_to_security: Dict
+        self, position_to_security: Dict, portfolio_name: str
     ) -> None:
         """Add INVESTED_IN relationships between positions and securities.
 
@@ -344,7 +345,9 @@ class GraphBuilder:
                                   - tuple (ticker, quantity, book_value) for bonds
                                   Values are (security_type, security_fibo_id) tuples
                                 security_type is 'stock' or 'bond'
+            portfolio_name: Name of portfolio (for matching portfolio-specific Position nodes)
         """
+        portfolio_name_escaped = self._escape_string(portfolio_name)
         for pos_key, (sec_type, sec_fibo_id) in position_to_security.items():
             sec_fibo_id_clean = self._escape_string(sec_fibo_id)
             label = "Stock" if sec_type.lower() == "stock" else "Bond"
@@ -355,7 +358,7 @@ class GraphBuilder:
                 pos_ticker, pos_qty, pos_book_value = pos_key
                 pos_ticker_clean = self._escape_string(pos_ticker)
                 query = (
-                    f"MATCH (pos:Position {{ticker: '{pos_ticker_clean}', "
+                    f"MATCH (pos:Position {{portfolio_name: '{portfolio_name_escaped}', ticker: '{pos_ticker_clean}', "
                     f"quantity: {pos_qty}, "
                     f"cost_basis: {pos_book_value}}}), "
                     f"(s:{label} {{fibo_id: '{sec_fibo_id_clean}'}}) "
@@ -365,7 +368,7 @@ class GraphBuilder:
                 # Stock position: match by ticker only
                 pos_ticker_clean = self._escape_string(pos_key)
                 query = (
-                    f"MATCH (pos:Position {{ticker: '{pos_ticker_clean}'}}), "
+                    f"MATCH (pos:Position {{portfolio_name: '{portfolio_name_escaped}', ticker: '{pos_ticker_clean}'}}), "
                     f"(s:{label} {{fibo_id: '{sec_fibo_id_clean}'}}) "
                     f"CREATE (pos)-[:INVESTED_IN]->(s);"
                 )
