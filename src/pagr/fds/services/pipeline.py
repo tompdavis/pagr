@@ -506,10 +506,13 @@ class ETLPipeline:
             security_to_company: Dict[str, Tuple[str, str]] = {}
 
             # Stocks -> Companies
-            for ticker, stock in stocks.items():
-                if ticker in companies:
-                    company_fibo_id = companies[ticker].fibo_id
+            # NOTE: stocks dict is keyed by CUSIP, so we use stock.ticker to lookup companies
+            for stock_key, stock in stocks.items():
+                if stock.ticker in companies:
+                    company_fibo_id = companies[stock.ticker].fibo_id
                     security_to_company[stock.fibo_id] = ("stock", company_fibo_id)
+                else:
+                    logger.warning(f"  Stock {stock.ticker} not found in companies dict, skipping ISSUED_BY relationship")
 
             # Bonds -> Companies (by issuer)
             for bond_id, bond in bonds.items():
