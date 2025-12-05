@@ -301,15 +301,15 @@ class ETLPipeline:
                         )
                         if country_data and len(country_data) > 0:
                             for rel in country_data:
-                                if rel.target_fibo_id not in countries:
+                                # Extract iso_code from fibo_id (format: fibo:country:XX)
+                                iso_code = rel.target_fibo_id.split(":")[-1].upper() if rel.target_fibo_id else "XX"
+                                if iso_code not in countries:
                                     country = Country(
                                         fibo_id=rel.target_fibo_id,
                                         name=company.country,
-                                        iso_code=company.country[:2]
-                                        if company.country
-                                        else "XX",
+                                        iso_code=iso_code,
                                     )
-                                    countries[company.country] = country
+                                    countries[iso_code] = country
                                     self.stats.countries_enriched += 1
                             logger.debug(f"  Enriched geography")
                     except Exception as e:
@@ -381,15 +381,21 @@ class ETLPipeline:
                             # Try to enrich geography for issuer if available
                             if issuer_company.country:
                                 try:
-                                    iso_code = issuer_company.country[:2].upper()
-                                    if iso_code not in countries:
-                                        country = Country(
-                                            fibo_id=f"fibo:country:{iso_code}",
-                                            name=issuer_company.country,
-                                            iso_code=iso_code,
-                                        )
-                                        countries[iso_code] = country
-                                        self.stats.countries_enriched += 1
+                                    country_data = relationship_enricher.enrich_geography(
+                                        issuer_company.fibo_id, issuer_company.country
+                                    )
+                                    if country_data and len(country_data) > 0:
+                                        for rel in country_data:
+                                            # Extract iso_code from fibo_id (format: fibo:country:XX)
+                                            iso_code = rel.target_fibo_id.split(":")[-1].upper() if rel.target_fibo_id else "XX"
+                                            if iso_code not in countries:
+                                                country = Country(
+                                                    fibo_id=rel.target_fibo_id,
+                                                    name=issuer_company.country,
+                                                    iso_code=iso_code,
+                                                )
+                                                countries[iso_code] = country
+                                                self.stats.countries_enriched += 1
                                 except Exception as e:
                                     logger.debug(
                                         f"  Could not enrich issuer geography: {e}"

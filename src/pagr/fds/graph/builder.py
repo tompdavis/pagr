@@ -168,7 +168,7 @@ class GraphBuilder:
     def add_country_nodes(self, countries: Dict[str, Country]) -> None:
         """Add country nodes.
 
-        Uses MERGE to avoid duplicates.
+        Uses MERGE to avoid duplicates. Merges on iso_code (unique identifier).
 
         Args:
             countries: Dict of iso_code -> Country
@@ -183,9 +183,9 @@ class GraphBuilder:
             # region_clause = f", region: '{region}'" if region else ""
 
             query = (
-                f"MERGE (c:Country {{fibo_id: '{fibo_id}'}}) "
-                f"SET c.name = '{name}', "
-                f"c.iso_code = '{iso_clean}' "
+                f"MERGE (c:Country {{iso_code: '{iso_clean}'}}) "
+                f"SET c.fibo_id = '{fibo_id}', "
+                f"c.name = '{name}' "
                 # f"{region_clause} "
                 f"RETURN c;"
             )
@@ -452,10 +452,14 @@ class GraphBuilder:
             company_fibo_id_clean = self._escape_string(company_fibo_id)
             country_iso_clean = self._escape_string(country_iso)
 
-            # MERGE country to create it if it doesn't exist
+            # MERGE country to create it if it doesn't exist (on iso_code for uniqueness)
+            # NOTE: fibo_id and name should be set by add_country_nodes() called earlier
+            # But we still set them here for safety in case add_country_nodes() wasn't called
             query = (
                 f"MATCH (c:Company {{fibo_id: '{company_fibo_id_clean}'}}) "
                 f"MERGE (co:Country {{iso_code: '{country_iso_clean}'}}) "
+                f"ON CREATE SET co.fibo_id = COALESCE(co.fibo_id, 'fibo:country:{country_iso_clean}'), "
+                f"co.name = COALESCE(co.name, '') "
                 f"CREATE (c)-[:HEADQUARTERED_IN]->(co);"
             )
             self.relationship_statements.append(query)
