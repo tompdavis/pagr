@@ -4,7 +4,11 @@
       "Bash(uv run python:*)",
       "Bash(cat:*)",
       "Bash(tree:*)",
-      "Bash(uv run streamlit:*)"
+      "Bash(uv run streamlit:*)",
+      "Bash(dir /s /b \"C:\\Users\\todavis\\code\\pagr\")",
+      "Bash(findstr:*)",
+      "Bash(uv run grep:*)",
+      "Bash(uv run find:*)"
     ],
     "deny": [],
     "ask": []

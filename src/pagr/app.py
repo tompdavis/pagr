@@ -157,10 +157,11 @@ def get_portfolio_manager():
 portfolio_manager = get_portfolio_manager()
 
 # Create tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "⚙️ Settings",
     "📁 Portfolio Selection",
     "📊 Holdings View",
+    "🔗 Graph View",
     "💬 Portfolio Chat Agent"
 ])
 
@@ -179,8 +180,13 @@ with tab3:
     from pagr.ui.tab_holdings import display_holdings_tab
     display_holdings_tab(etl_manager, portfolio_manager)
 
-# Portfolio Chat Agent Tab
+# Graph View Tab
 with tab4:
+    from pagr.ui.tab_graph_view import display_graph_view_tab
+    display_graph_view_tab(etl_manager, portfolio_manager)
+
+# Portfolio Chat Agent Tab
+with tab5:
     from pagr.ui.tab_chat_agent import display_chat_agent_tab
     display_chat_agent_tab(portfolio_manager, etl_manager.query_service)
 

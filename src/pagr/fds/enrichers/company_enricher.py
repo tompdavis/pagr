@@ -1,7 +1,7 @@
 """Enricher for company data from FactSet API."""
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 from pagr.fds.clients.factset_client import FactSetClient
 from pagr.fds.models.fibo import Company, Executive
@@ -20,14 +20,15 @@ class CompanyEnricher:
         """
         self.client = factset_client
 
-    def enrich_company(self, ticker: str) -> Optional[Company]:
+    def enrich_company(self, ticker: str) -> Optional[Tuple[Company, Optional[str]]]:
         """Enrich company data from ticker.
 
         Args:
-            ticker: Security ticker (e.g., 'AAPL-US')
+            ticker: Security ticker (e.g., 'AAPL-US' or 'AAPL')
 
         Returns:
-            Company FIBO entity or None if not found
+            Tuple of (Company FIBO entity, CUSIP) or None if not found
+            CUSIP may be None if not available in API response
 
         Raises:
             Exception: If API call fails
@@ -51,6 +52,11 @@ class CompanyEnricher:
 
             logger.debug(f"Resolved {ticker} to entity ID {entity_id}")
 
+            # Extract CUSIP from profile if available
+            cusip = profile.get("cusip")  # FactSet API includes CUSIP in profile response
+            if cusip:
+                logger.debug(f"Resolved {ticker} to CUSIP {cusip}")
+
             # Step 3: Create Company FIBO entity
             # Extract country from address if available
             country = None
@@ -72,9 +78,10 @@ class CompanyEnricher:
             logger.info(
                 f"Successfully enriched {company.name} ({ticker}): "
                 f"sector={company.sector}, country={company.country}"
+                + (f", cusip={cusip}" if cusip else "")
             )
 
-            return company
+            return (company, cusip)
 
         except Exception as e:
             if "400 Client Error" in str(e):

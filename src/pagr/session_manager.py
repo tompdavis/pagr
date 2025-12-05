@@ -64,6 +64,10 @@ class SessionManager:
         if "connections_tested_on_startup" not in st.session_state:
             st.session_state.connections_tested_on_startup = False
 
+        # NEW: Track if portfolios have been auto-selected on first load
+        if "portfolios_auto_selected" not in st.session_state:
+            st.session_state.portfolios_auto_selected = False
+
     @staticmethod
     def set_portfolio(portfolio: Portfolio, stats: PipelineStatistics):
         """Set portfolio and pipeline statistics in session state."""
@@ -221,3 +225,17 @@ class SessionManager:
             True if already tested, False otherwise
         """
         return st.session_state.get("connections_tested_on_startup", False)
+
+    @staticmethod
+    def mark_portfolios_auto_selected():
+        """Mark that portfolios have been auto-selected on first load."""
+        st.session_state.portfolios_auto_selected = True
+
+    @staticmethod
+    def portfolios_already_auto_selected() -> bool:
+        """Check if portfolios have been auto-selected on first load.
+
+        Returns:
+            True if already auto-selected, False otherwise
+        """
+        return st.session_state.get("portfolios_auto_selected", False)

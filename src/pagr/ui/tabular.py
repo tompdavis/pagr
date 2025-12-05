@@ -78,7 +78,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
 
         if positions_data:
             df_positions = pd.DataFrame(positions_data)
-            st.dataframe(df_positions, use_container_width=True, hide_index=True)
+            st.dataframe(df_positions, width='stretch', hide_index=True)
         else:
             st.info("No positions to display")
     except Exception as e:
@@ -125,7 +125,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
 
                     st.write("**Sector Breakdown**")
                     display_df = _pad_dataframe_to_height(display_df, max_rows=10)
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    st.dataframe(display_df, width='stretch', hide_index=True)
                 except Exception as e:
                     logger.error(f"Error formatting sector data: {e}")
                     st.warning(f"⚠️ Error formatting sector data: {str(e)[:100]}")
@@ -156,7 +156,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
 
                 # Get positions in selected sector
                 if selected_sector:
-                    sector_pos_result = query_service.sector_positions(portfolio.name, selected_sector)
+                    sector_pos_result = query_service.sector_positions(portfolio_names, selected_sector)
                     if sector_pos_result and sector_pos_result.records:
                         sector_pos_data = [dict(record) for record in sector_pos_result.records]
                         sector_pos_df = pd.DataFrame(sector_pos_data)
@@ -188,7 +188,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
                             )
 
                         st.write(f"**Positions in {selected_sector}**")
-                        st.dataframe(display_sector_pos_df, use_container_width=True, hide_index=True)
+                        st.dataframe(display_sector_pos_df, width='stretch', hide_index=True)
 
                         # Display chart of positions in selected sector
                         if 'company' in sector_pos_df.columns and 'market_value' in sector_pos_df.columns:
@@ -242,7 +242,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
 
                 st.write("**Country Breakdown**")
                 display_country_df = _pad_dataframe_to_height(display_country_df, max_rows=10)
-                st.dataframe(display_country_df, use_container_width=True, hide_index=True)
+                st.dataframe(display_country_df, width='stretch', hide_index=True)
 
                 # Display country breakdown chart
                 if 'country_code' in country_df.columns and 'total_exposure' in country_df.columns:
@@ -302,7 +302,7 @@ def display_tabular_view(portfolios, query_service: QueryService):
                             )
 
                         st.write(f"**Positions in {selected_country}**")
-                        st.dataframe(display_country_pos_df, use_container_width=True, hide_index=True)
+                        st.dataframe(display_country_pos_df, width='stretch', hide_index=True)
 
                         # Display chart of positions in selected country
                         if 'company' in country_pos_df.columns and 'market_value' in country_pos_df.columns:

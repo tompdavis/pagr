@@ -237,25 +237,49 @@ class ETLPipeline:
         """
         try:
             # Enrich company data
-            company = company_enricher.enrich_company(ticker)
-            if company:
+            enrichment_result = company_enricher.enrich_company(ticker)
+            if enrichment_result:
+                company, resolved_cusip = enrichment_result
+
+                # Populate position.cusip with resolved CUSIP from FactSet if not already set
+                if not position.cusip and resolved_cusip:
+                    position.cusip = resolved_cusip
+                    logger.debug(f"  Populated position.cusip with resolved value: {resolved_cusip}")
+
                 companies[ticker] = company
                 self.stats.companies_enriched += 1
                 logger.debug(f"  Enriched company: {company.name}")
 
-                # Create Stock FIBO entity
+                # Resolve CUSIP for stock entity
+                stock_cusip = resolved_cusip or position.cusip
+
+                # REJECT position if CUSIP not available
+                if not stock_cusip:
+                    logger.warning(
+                        f"  REJECTED Position {ticker}: CUSIP not available in CSV "
+                        f"and could not be resolved from FactSet API. "
+                        f"Position will not be loaded into database."
+                    )
+                    self.stats.add_error(
+                        f"Position {ticker}: CUSIP not available (not in CSV and not from API)"
+                    )
+                    return
+
+                # Create Stock FIBO entity with resolved CUSIP
                 stock = Stock(
                     fibo_id=f"fibo:stock:{ticker}",
                     ticker=ticker,
                     security_type=position.security_type or "Common Stock",
                     isin=position.isin,
-                    cusip=position.cusip,
+                    cusip=stock_cusip,
                     sedol=None,
                     market_price=None,  # Will be filled by enrich_prices
                 )
-                stocks[position.cusip] = stock
+
+                # Key by CUSIP (guaranteed to exist here)
+                stocks[stock_cusip] = stock
                 self.stats.stocks_enriched += 1
-                logger.debug(f"  Created Stock entity for {ticker}")
+                logger.debug(f"  Created Stock entity for {ticker} with CUSIP {stock_cusip}")
 
                 # Enrich executives for this company
                 try:
@@ -452,17 +476,17 @@ class ETLPipeline:
 
             # Build Position -> Security mappings for INVESTED_IN relationships
             # Maps: (position_ticker, position_quantity, position_book_value) -> (security_type, security_fibo_id)
-            # NOTE: Using CUSIP for matching instead of ticker because:
-            # - Tickers can be ambiguous (same ticker on different exchanges)
-            # - CUSIP is unique identifier provided by FactSet enrichment
-            # - Future: Consider switching to ISIN for better support of non-North American portfolios
+            # NOTE: Using CUSIP for stock matching (required, no fallback)
+            # - CUSIP is the unique identifier provided by CSV or FactSet enrichment
+            # - Positions without CUSIP are rejected during enrichment (see _enrich_stock_position)
+            # - This ensures data integrity and clear position tracking
             position_to_security: Dict[tuple, Tuple[str, str]] = {}
             for position in portfolio.positions:
-                # Use CUSIP as the primary lookup key for stocks (not ticker)
-                # CUSIP is more reliable than ticker and matches how stocks dict is keyed
+                # For stocks: CUSIP is required (positions without it are rejected during enrichment)
                 if position.cusip and position.cusip in stocks:
                     # Stock position - use CUSIP to lookup in stocks dict
-                    stock_fibo_id = stocks[position.cusip].fibo_id
+                    stock = stocks[position.cusip]
+                    stock_fibo_id = stock.fibo_id
                     position_to_security[(position.ticker, position.quantity, position.book_value)] = ("stock", stock_fibo_id)
                 elif position.cusip or position.isin:
                     # Bond position - look up by CUSIP/ISIN, but use position properties as key

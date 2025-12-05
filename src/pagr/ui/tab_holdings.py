@@ -10,7 +10,6 @@ from pagr.portfolio_loader import PortfolioLoader
 from pagr.portfolio_analysis_service import PortfolioAnalysisService
 from pagr.ui.metrics import display_portfolio_metrics
 from pagr.ui.tabular import display_tabular_view
-from pagr.ui.graph_view import display_graph_view
 from pagr.ui.components import display_portfolio_selector
 
 logger = logging.getLogger(__name__)
@@ -58,13 +57,14 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
         return
 
     # Two-column layout: Portfolio selector (left) + Holdings display (right)
-    selected_portfolios = display_portfolio_selector(
-        available_portfolios,
-        column_width=(1, 4),
-        key_prefix="holdings_portfolio_selector",
-    )
-
     left_col, right_col = st.columns([1, 4])
+
+    with left_col:
+        selected_portfolios = display_portfolio_selector(
+            available_portfolios,
+            column_width=None,
+            key_prefix="holdings_portfolio_selector",
+        )
 
     with right_col:
         # Display selected portfolio(s)
@@ -96,8 +96,8 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
 
         st.subheader(header)
 
-        # Display portfolio metrics (first portfolio for now, Phase 4 will add aggregation)
-        display_portfolio_metrics(display_portfolios[0])
+        # Display portfolio metrics (aggregated across all selected portfolios)
+        display_portfolio_metrics(display_portfolios)
 
         # DEBUG: Log portfolio state
         total_positions = sum(len(p.positions) if p.positions else 0 for p in display_portfolios)
@@ -109,36 +109,16 @@ def display_holdings_tab(etl_manager, portfolio_manager: PortfolioManager):
 
         st.divider()
 
-        # View selection
-        st.subheader("Display Options")
-
-        view_selection = st.radio(
-            "Select View",
-            ["Tabular Analysis", "Graph Visualization"],
-            horizontal=True,
-            key="holdings_view_selection"
-        )
-
-        st.divider()
-
-        # Display selected view
+        # Display tabular view
         query_service = SessionManager.get_query_service()
 
-        if view_selection == "Tabular Analysis":
-            if query_service:
-                try:
-                    portfolio_names = [p.name for p in display_portfolios]
-                    logger.debug(f"Calling display_tabular_view with portfolios: {portfolio_names}, total positions: {total_positions}")
-                    display_tabular_view(display_portfolios, query_service)
-                except Exception as e:
-                    st.error(f"Error displaying tabular view: {str(e)}")
-                    logger.exception(f"Tabular view error: {e}")
-            else:
-                st.error("Query service not initialized. Please reload the portfolio.")
-
-        elif view_selection == "Graph Visualization":
+        if query_service:
             try:
-                display_graph_view(display_portfolios, etl_manager.memgraph_client)
+                portfolio_names = [p.name for p in display_portfolios]
+                logger.debug(f"Calling display_tabular_view with portfolios: {portfolio_names}, total positions: {total_positions}")
+                display_tabular_view(display_portfolios, query_service)
             except Exception as e:
-                st.error(f"Error displaying graph view: {str(e)}")
-                logger.exception(f"Graph view error: {e}")
+                st.error(f"Error displaying tabular view: {str(e)}")
+                logger.exception(f"Tabular view error: {e}")
+        else:
+            st.error("Query service not initialized. Please reload the portfolio.")
