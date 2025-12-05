@@ -241,10 +241,10 @@ class GraphBuilder:
             cusip = self._escape_string(stock.cusip) if stock.cusip else ""
             sedol = self._escape_string(stock.sedol) if stock.sedol else ""
 
-            isin_clause = f", isin: '{isin}'" if isin else ""
-            cusip_clause = f", cusip: '{cusip}'" if cusip else ""
-            sedol_clause = f", sedol: '{sedol}'" if sedol else ""
-            market_price_clause = f", market_price: {stock.market_price}" if stock.market_price is not None else ""
+            isin_clause = f", s.isin = '{isin}'" if isin else ""
+            cusip_clause = f", s.cusip = '{cusip}'" if cusip else ""
+            sedol_clause = f", s.sedol = '{sedol}'" if sedol else ""
+            market_price_clause = f", s.market_price = {stock.market_price}" if stock.market_price is not None else ""
 
             query = (
                 f"MERGE (s:Stock {{fibo_id: '{fibo_id}'}}) "
