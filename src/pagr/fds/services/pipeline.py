@@ -245,7 +245,7 @@ class ETLPipeline:
                     sedol=None,
                     market_price=None,  # Will be filled by enrich_prices
                 )
-                stocks[ticker] = stock
+                stocks[position.cusip] = stock
                 self.stats.stocks_enriched += 1
                 logger.debug(f"  Created Stock entity for {ticker}")
 
@@ -444,11 +444,17 @@ class ETLPipeline:
 
             # Build Position -> Security mappings for INVESTED_IN relationships
             # Maps: (position_ticker, position_quantity, position_book_value) -> (security_type, security_fibo_id)
+            # NOTE: Using CUSIP for matching instead of ticker because:
+            # - Tickers can be ambiguous (same ticker on different exchanges)
+            # - CUSIP is unique identifier provided by FactSet enrichment
+            # - Future: Consider switching to ISIN for better support of non-North American portfolios
             position_to_security: Dict[tuple, Tuple[str, str]] = {}
             for position in portfolio.positions:
-                if position.ticker and position.ticker in stocks:
-                    # Stock position - use ticker as position key
-                    stock_fibo_id = stocks[position.ticker].fibo_id
+                # Use CUSIP as the primary lookup key for stocks (not ticker)
+                # CUSIP is more reliable than ticker and matches how stocks dict is keyed
+                if position.cusip and position.cusip in stocks:
+                    # Stock position - use CUSIP to lookup in stocks dict
+                    stock_fibo_id = stocks[position.cusip].fibo_id
                     position_to_security[(position.ticker, position.quantity, position.book_value)] = ("stock", stock_fibo_id)
                 elif position.cusip or position.isin:
                     # Bond position - look up by CUSIP/ISIN, but use position properties as key
