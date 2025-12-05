@@ -144,12 +144,13 @@ class ETLManager:
             logger.error(f"Memgraph connection error: {e}")
             return False
 
-    def process_uploaded_csv(self, uploaded_file) -> tuple:
+    def process_uploaded_csv(self, uploaded_file, portfolio_name: str = None) -> tuple:
         """
         Process uploaded CSV through ETL pipeline.
 
         Args:
             uploaded_file: Streamlit uploaded file object
+            portfolio_name: Optional name for the portfolio (defaults to filename)
 
         Returns:
             Tuple of (Portfolio, PipelineStatistics)
@@ -176,8 +177,8 @@ class ETLManager:
                 graph_builder=graph_builder
             )
 
-            # Execute ETL pipeline
-            portfolio, statements, stats = pipeline.execute(tmp_path)
+            # Execute ETL pipeline with explicit portfolio name
+            portfolio, statements, stats = pipeline.execute(tmp_path, portfolio_name=portfolio_name)
 
             if not portfolio:
                 raise Exception("Failed to load portfolio")

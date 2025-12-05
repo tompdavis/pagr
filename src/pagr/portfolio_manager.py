@@ -111,10 +111,10 @@ class PortfolioManager:
             return False
 
     def delete_all_portfolios(self) -> bool:
-        """Delete all portfolios and their positions from database.
+        """Delete all data from the database (complete wipe).
 
-        Removes all Portfolio nodes and their related Position nodes (which are portfolio-specific).
-        Preserves Company, Country, Stock, and Bond nodes (which are shared reference data).
+        Removes ALL nodes: Portfolio, Position, Company, Country, Stock, Bond, Executive.
+        This is a complete database reset.
 
         Returns:
             True if successfully deleted, False if error
@@ -124,20 +124,19 @@ class PortfolioManager:
             if not self.memgraph_client.is_connected:
                 self.memgraph_client.connect()
 
-            # Query to delete all portfolios and their positions
-            # Preserves Company, Country, Stock, Bond, Executive nodes (which are shared)
+            # Query to delete ALL nodes and relationships in the database
             query = """
-                MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)
-                DETACH DELETE p, pos
+                MATCH (n)
+                DETACH DELETE n
             """
 
             self.memgraph_client.execute_query(query)
 
-            logger.info("Successfully deleted all portfolios and positions")
+            logger.info("Successfully deleted all data from database (complete wipe)")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to delete all portfolios: {e}")
+            logger.error(f"Failed to delete all data: {e}")
             return False
 
     def get_portfolio_metadata(self, portfolio_name: str) -> Optional[Dict[str, Any]]:

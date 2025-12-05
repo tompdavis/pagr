@@ -44,6 +44,16 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
         with col2:
             st.empty()  # Placeholder for alignment
 
+        # Hide the uploaded filename display with custom CSS
+        st.markdown("""
+            <style>
+            /* Hide the filename that appears under the file uploader */
+            [data-testid="stFileUploader"] > div:first-child > div:first-child > div:first-child {
+                display: none;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
         # File uploader
         uploaded_file = st.file_uploader(
             "Upload Portfolio CSV",
@@ -83,8 +93,8 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
                                         "Please ensure Memgraph is running on 127.0.0.1:7687"
                                     )
                                 else:
-                                    # Process CSV
-                                    portfolio, stats = etl_manager.process_uploaded_csv(uploaded_file)
+                                    # Process CSV with explicit portfolio name
+                                    portfolio, stats = etl_manager.process_uploaded_csv(uploaded_file, portfolio_name=portfolio_name)
                                     logger.info(f"Portfolio object created: name={portfolio.name}, positions={len(portfolio.positions)}")
 
                                     SessionManager.set_portfolio(portfolio, stats)
@@ -146,7 +156,7 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
 
     # Confirmation dialog
     if st.session_state.get("show_clear_all_confirm", False):
-        st.warning("⚠️ This will delete ALL portfolios and positions. Reference data (companies, countries) will be preserved.")
+        st.warning("⚠️ This will delete ALL data from the database (complete wipe). You will need to re-upload portfolios.")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -186,56 +196,58 @@ def display_portfolio_selection_tab(etl_manager, portfolio_manager: PortfolioMan
         st.write(f"**Found {len(available_portfolios)} portfolio(s):**")
 
         for portfolio in available_portfolios:
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            portfolio_name = portfolio.get("name", "Unknown")
+            created_at = portfolio.get("created_at", "N/A")
+            position_count = portfolio.get("position_count", 0)
+
+            # Two-column layout: Portfolio info (left) + Delete button (right)
+            col1, col2 = st.columns([4, 1])
 
             with col1:
-                portfolio_name = portfolio.get("name", "Unknown")
-                created_at = portfolio.get("created_at", "N/A")
-                position_count = portfolio.get("position_count", 0)
-
-                st.write(f"**{portfolio_name}**")
-                st.caption(f"Positions: {position_count} | Created: {created_at}")
+                # Compact single-line display
+                date_str = created_at[:10] if created_at != "N/A" else "N/A"
+                st.write(f"**{portfolio_name}** • {position_count} positions • {date_str}")
 
             with col2:
-                st.empty()  # Spacer
-
-            with col3:
-                st.empty()  # Spacer
-
-            with col4:
                 # Delete button
                 delete_key = f"delete_{portfolio_name}"
-                if st.button("🗑️ Delete", key=delete_key, use_container_width=True):
-                    # Show confirmation
-                    col_confirm1, col_confirm2 = st.columns(2)
+                if st.button("🗑️", key=delete_key, use_container_width=True, help="Delete portfolio"):
+                    # Store which portfolio is pending deletion in session state
+                    st.session_state[f"show_delete_confirm_{portfolio_name}"] = True
 
-                    with col_confirm1:
-                        if st.button(
-                            "✓ Confirm Delete",
-                            key=f"confirm_delete_{portfolio_name}",
-                            use_container_width=True
-                        ):
-                            with st.spinner(f"Deleting portfolio '{portfolio_name}'..."):
-                                try:
-                                    if portfolio_manager.delete_portfolio(portfolio_name):
-                                        st.success(f"✅ Portfolio '{portfolio_name}' deleted successfully!")
-                                        _refresh_portfolio_list(portfolio_manager)
-                                        st.rerun()
-                                    else:
-                                        st.error(f"Failed to delete portfolio '{portfolio_name}'")
-                                except Exception as e:
-                                    st.error(f"Error deleting portfolio: {str(e)}")
-                                    logger.exception(f"Delete portfolio error: {e}")
+            # Show confirmation dialog if this portfolio is pending deletion
+            if st.session_state.get(f"show_delete_confirm_{portfolio_name}", False):
+                col_confirm1, col_confirm2 = st.columns(2)
 
-                    with col_confirm2:
-                        if st.button(
-                            "✗ Cancel",
-                            key=f"cancel_delete_{portfolio_name}",
-                            use_container_width=True
-                        ):
-                            st.info("Delete cancelled")
+                with col_confirm1:
+                    if st.button(
+                        "✓ Confirm Delete",
+                        key=f"confirm_delete_{portfolio_name}",
+                        use_container_width=True
+                    ):
+                        with st.spinner(f"Deleting portfolio '{portfolio_name}'..."):
+                            try:
+                                if portfolio_manager.delete_portfolio(portfolio_name):
+                                    st.success(f"✅ Portfolio '{portfolio_name}' deleted successfully!")
+                                    _refresh_portfolio_list(portfolio_manager)
+                                    # Clear the confirmation state
+                                    st.session_state[f"show_delete_confirm_{portfolio_name}"] = False
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to delete portfolio '{portfolio_name}'")
+                            except Exception as e:
+                                st.error(f"Error deleting portfolio: {str(e)}")
+                                logger.exception(f"Delete portfolio error: {e}")
 
-            st.divider()
+                with col_confirm2:
+                    if st.button(
+                        "✗ Cancel",
+                        key=f"cancel_delete_{portfolio_name}",
+                        use_container_width=True
+                    ):
+                        # Clear the confirmation state
+                        st.session_state[f"show_delete_confirm_{portfolio_name}"] = False
+                        st.rerun()
 
     else:
         st.info("📌 No portfolios found. Upload a CSV portfolio to get started!")

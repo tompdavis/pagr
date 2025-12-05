@@ -93,18 +93,19 @@ class ETLPipeline:
         self.stats = PipelineStatistics()
         logger.info("Initialized ETL pipeline")
 
-    def load_portfolio(self, portfolio_file: str) -> Optional[Portfolio]:
+    def load_portfolio(self, portfolio_file: str, portfolio_name: str = None) -> Optional[Portfolio]:
         """Load portfolio from file.
 
         Args:
             portfolio_file: Path to portfolio CSV file
+            portfolio_name: Optional name for portfolio (defaults to filename stem)
 
         Returns:
             Portfolio instance or None if load fails
         """
         try:
             logger.info(f"Loading portfolio from {portfolio_file}")
-            portfolio = self.portfolio_loader.load(portfolio_file)
+            portfolio = self.portfolio_loader.load(portfolio_file, portfolio_name=portfolio_name)
 
             self.stats.portfolios_loaded = 1
             self.stats.positions_loaded = len(portfolio.positions)
@@ -648,11 +649,12 @@ class ETLPipeline:
             logger.error(error_msg)
             self.stats.add_error(error_msg)
 
-    def execute(self, portfolio_file: str) -> Tuple[Optional[Portfolio], List[str], PipelineStatistics]:
+    def execute(self, portfolio_file: str, portfolio_name: str = None) -> Tuple[Optional[Portfolio], List[str], PipelineStatistics]:
         """Execute full ETL pipeline for mixed stock/bond portfolios.
 
         Args:
             portfolio_file: Path to portfolio CSV file
+            portfolio_name: Optional name for portfolio (defaults to filename stem)
 
         Returns:
             Tuple of (Portfolio, Cypher statements, statistics)
@@ -661,8 +663,8 @@ class ETLPipeline:
         logger.info("Starting ETL Pipeline")
         logger.info("=" * 70)
 
-        # Step 1: Load portfolio
-        portfolio = self.load_portfolio(portfolio_file)
+        # Step 1: Load portfolio with explicit name
+        portfolio = self.load_portfolio(portfolio_file, portfolio_name=portfolio_name)
         if not portfolio:
             logger.error("Pipeline failed: Could not load portfolio")
             return None, [], self.stats
