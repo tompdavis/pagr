@@ -38,33 +38,56 @@ def display_graph_view(portfolios, memgraph_client: MemgraphClient):
                 portfolio_names = [p.name for p in portfolios]
                 names_list = ", ".join(f"'{name}'" for name in portfolio_names)
 
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Graph query for portfolios: {portfolio_names}")
+
+                # Diagnostic: Verify relationship chain exists (DEBUG level)
+                test_query_1 = f"""
+                    MATCH (p:Portfolio)
+                    WHERE p.name IN [{names_list}]
+                    RETURN p, count(*) as match_count
+                    LIMIT 10
+                """
+                test_records_1 = memgraph_client.execute_query(test_query_1)
+                logger.debug(f"Diagnostic - Portfolios found: {len(test_records_1)} records")
+
+                # Diagnostic: Check Portfolio-Position relationships
+                test_query_2 = f"""
+                    MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)
+                    WHERE p.name IN [{names_list}]
+                    RETURN p, pos
+                    LIMIT 10
+                """
+                test_records_2 = memgraph_client.execute_query(test_query_2)
+                logger.debug(f"Diagnostic - Portfolio-Position relationships found: {len(test_records_2)} records")
+
+                # Build main query - full graph query
+                # Note: INVESTED_IN is optional to support partially-enriched portfolios
+                # Note: sec can be Stock or Bond, so use label alternatives (Stock|Bond)
                 query_parts = []
                 query_parts.append(f"""
-                    MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)-[:INVESTED_IN]->(sec)
+                    MATCH (p:Portfolio)-[:CONTAINS]->(pos:Position)
                     WHERE p.name IN [{names_list}]
+                    OPTIONAL MATCH (pos)-[:INVESTED_IN]->(sec:Stock|Bond)
                     OPTIONAL MATCH (sec)-[:ISSUED_BY]->(c:Company)
                     OPTIONAL MATCH (c)-[:HEADQUARTERED_IN]->(country:Country)
-                """)
-
-                if show_executives:
-                    query_parts.append("OPTIONAL MATCH (exec:Executive)-[:CEO_OF]->(c)")
-                else:
-                    query_parts.append("OPTIONAL MATCH exec = (n) WHERE 1=0")
-
-                if show_subsidiaries:
-                    query_parts.append("OPTIONAL MATCH (c)-[:HAS_SUBSIDIARY]->(sub:Company)")
-                else:
-                    query_parts.append("OPTIONAL MATCH sub = (n) WHERE 1=0")
-
-                query_parts.append("""
-                    RETURN p, pos, sec, c, country, exec, sub
-                    LIMIT 100
+                    RETURN p, pos, sec, c, country
+                    LIMIT 2000
                 """)
 
                 query = "\n".join(query_parts)
 
+                # Log the actual query for debugging
+                logger.debug(f"Full Cypher query:\n{query}")
+
                 # Execute query
                 records = memgraph_client.execute_query(query)
+                logger.info(f"Graph query returned {len(records)} records for {len(portfolio_names)} portfolios")
+
+                if len(records) == 0:
+                    logger.warning(f"Query returned 0 records. Query was:\n{query}")
+                    st.warning("⚠️ No graph data found. This may indicate the database doesn't have enriched relationship data yet.")
 
                 # Create network
                 net = Network(height="700px", width="100%", directed=True, cdn_resources='in_line')
@@ -267,6 +290,11 @@ def display_graph_view(portfolios, memgraph_client: MemgraphClient):
                         components.html(f.read(), height=700)
                 finally:
                     Path(temp_path).unlink(missing_ok=True)
+
+                # Extract portfolio nodes to verify multi-portfolio support
+                portfolio_nodes = [n for n in nodes_added if n.startswith('portfolio_')]
+                logger.info(f"Portfolio nodes in graph: {portfolio_nodes}")
+                logger.info(f"Total nodes: {len(nodes_added)}, Portfolio nodes: {len(portfolio_nodes)}, Edges: {len(edges_added)}")
 
                 st.caption(f"Graph contains {len(nodes_added)} nodes and {len(edges_added)} relationships")
 
