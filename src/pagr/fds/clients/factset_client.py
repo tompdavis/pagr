@@ -49,6 +49,7 @@ class FactSetClient:
         rate_limit_rps: int = 10,
         timeout: int = 30,
         max_retries: int = 3,
+        max_retry_delay: int = 300,
     ):
         """Initialize FactSet API client.
 
@@ -59,6 +60,7 @@ class FactSetClient:
             rate_limit_rps: Requests per second limit
             timeout: Request timeout in seconds
             max_retries: Maximum retry attempts
+            max_retry_delay: Maximum seconds to wait for 429 rate limit retry (default: 300/5 minutes)
 
         Raises:
             ValueError: If credentials are invalid
@@ -71,6 +73,7 @@ class FactSetClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
+        self.max_retry_delay = max_retry_delay
 
         # Rate limiting: delay between requests
         self.rate_limit_delay = 1.0 / rate_limit_rps
@@ -125,6 +128,17 @@ class FactSetClient:
             # Check for rate limit
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", 5))
+
+                # Check if retry delay exceeds maximum allowed (prevent 10+ hour blocks)
+                if retry_after > self.max_retry_delay:
+                    error_msg = (
+                        f"Rate limit retry delay ({retry_after}s) exceeds maximum allowed "
+                        f"({self.max_retry_delay}s). API quota likely exhausted. "
+                        f"Please wait and try again later, or contact FactSet support."
+                    )
+                    logger.error(error_msg)
+                    raise FactSetClientError(error_msg)
+
                 logger.warning(
                     f"Rate limited. Waiting {retry_after} seconds before retry..."
                 )
