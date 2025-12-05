@@ -228,38 +228,45 @@ class FactSetClient:
         """
         logger.info(f"Resolving CUSIP for ticker {ticker}")
 
-        try:
-            # Use symbology API to resolve ticker to CUSIP
-            endpoint = (
-                f"/content/symbology/v3/identifier-resolution?"
-                f"ids={ticker}&"
-                f"inputSymbolType=tickerRegion&"
-                f"outputSymbolTypes=CUSIP"
-            )
+        # Try with provided ticker first
+        tickers_to_try = [ticker]
 
-            response = self._make_request("GET", endpoint)
+        # If ticker doesn't have a region, try adding -US as fallback
+        if "-" not in ticker:
+            tickers_to_try.append(f"{ticker}-US")
 
-            if not response.get("data") or len(response["data"]) == 0:
-                logger.debug(f"No CUSIP found for ticker {ticker}")
-                return None
+        for try_ticker in tickers_to_try:
+            try:
+                # Use symbology API to resolve ticker to CUSIP
+                endpoint = (
+                    f"/content/symbology/v3/identifier-resolution?"
+                    f"ids={try_ticker}&"
+                    f"inputSymbolType=tickerRegion&"
+                    f"outputSymbolTypes=CUSIP"
+                )
 
-            data = response["data"][0]
+                response = self._make_request("GET", endpoint)
 
-            # Check if symbolMapping exists and has CUSIP
-            if data.get("symbolMapping"):
-                cusip_list = data["symbolMapping"].get("cusip")
-                if cusip_list and len(cusip_list) > 0:
-                    cusip = cusip_list[0]
-                    logger.info(f"Resolved {ticker} to CUSIP {cusip}")
+                if not response.get("data") or len(response["data"]) == 0:
+                    logger.debug(f"No CUSIP mapping in API response for ticker {try_ticker}")
+                    continue
+
+                data = response["data"][0]
+
+                # Check for CUSIP directly in response (not symbolMapping)
+                cusip = data.get("CUSIP")
+                if cusip:
+                    logger.info(f"Resolved {ticker} to CUSIP {cusip} using ticker {try_ticker}")
                     return cusip
 
-            logger.debug(f"No CUSIP mapping found for ticker {ticker}")
-            return None
+                logger.debug(f"No CUSIP value found for ticker {try_ticker}")
 
-        except Exception as e:
-            logger.debug(f"Error resolving CUSIP for {ticker}: {e}")
-            # Don't raise - return None to allow fallback in caller
-            return None
+            except Exception as e:
+                logger.debug(f"Error resolving CUSIP for {try_ticker}: {e}")
+                continue
+
+        logger.debug(f"Could not resolve CUSIP for ticker {ticker} (tried: {tickers_to_try})")
+        return None
 
     def get_company_profile(self, entity_ids: list[str]) -> dict:
         """Fetch company profile data.
