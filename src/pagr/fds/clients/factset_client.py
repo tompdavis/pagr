@@ -211,6 +211,56 @@ class FactSetClient:
         # Use company profile endpoint which accepts tickers directly and returns fsymId
         return self.get_company_profile(tickers)
 
+    def resolve_cusip_from_ticker(self, ticker: str) -> Optional[str]:
+        """Resolve CUSIP from ticker using FactSet Symbology API.
+
+        Uses the /symbology/v3/identifier-resolution endpoint to convert ticker
+        (with optional region) to CUSIP identifier.
+
+        Args:
+            ticker: Security ticker (e.g., 'AAPL-US', 'AAPL', 'GOOGL')
+
+        Returns:
+            CUSIP identifier if found, None otherwise
+
+        Raises:
+            FactSetClientError: If API call fails
+        """
+        logger.info(f"Resolving CUSIP for ticker {ticker}")
+
+        try:
+            # Use symbology API to resolve ticker to CUSIP
+            endpoint = (
+                f"/content/symbology/v3/identifier-resolution?"
+                f"ids={ticker}&"
+                f"inputSymbolType=tickerRegion&"
+                f"outputSymbolTypes=CUSIP"
+            )
+
+            response = self._make_request("GET", endpoint)
+
+            if not response.get("data") or len(response["data"]) == 0:
+                logger.debug(f"No CUSIP found for ticker {ticker}")
+                return None
+
+            data = response["data"][0]
+
+            # Check if symbolMapping exists and has CUSIP
+            if data.get("symbolMapping"):
+                cusip_list = data["symbolMapping"].get("cusip")
+                if cusip_list and len(cusip_list) > 0:
+                    cusip = cusip_list[0]
+                    logger.info(f"Resolved {ticker} to CUSIP {cusip}")
+                    return cusip
+
+            logger.debug(f"No CUSIP mapping found for ticker {ticker}")
+            return None
+
+        except Exception as e:
+            logger.debug(f"Error resolving CUSIP for {ticker}: {e}")
+            # Don't raise - return None to allow fallback in caller
+            return None
+
     def get_company_profile(self, entity_ids: list[str]) -> dict:
         """Fetch company profile data.
 

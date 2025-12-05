@@ -55,7 +55,13 @@ class CompanyEnricher:
             # Extract CUSIP from profile if available
             cusip = profile.get("cusip")  # FactSet API includes CUSIP in profile response
             if cusip:
-                logger.debug(f"Resolved {ticker} to CUSIP {cusip}")
+                logger.debug(f"Resolved {ticker} to CUSIP {cusip} (from company profile)")
+            else:
+                # If CUSIP not in profile, try symbology API as fallback
+                logger.debug(f"CUSIP not in company profile, attempting symbology API resolution")
+                cusip = self.client.resolve_cusip_from_ticker(ticker)
+                if cusip:
+                    logger.debug(f"Resolved {ticker} to CUSIP {cusip} (from symbology API)")
 
             # Step 3: Create Company FIBO entity
             # Extract country from address if available
