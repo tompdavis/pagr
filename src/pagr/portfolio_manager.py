@@ -36,11 +36,13 @@ class PortfolioManager:
             if not self.memgraph_client.is_connected:
                 self.memgraph_client.connect()
 
-            # Query to get all portfolios with metadata
+            # Query to get all portfolios with metadata including position count
             query = """
             MATCH (p:Portfolio)
-            RETURN p.name AS name, p.created_at AS created_at
-            ORDER BY p.name
+            OPTIONAL MATCH (p)-[:CONTAINS]->(pos:Position)
+            WITH p.name AS name, p.created_at AS created_at, count(pos) AS position_count
+            RETURN name, created_at, position_count
+            ORDER BY name
             """
 
             results = self.memgraph_client.execute_query(query)
@@ -55,15 +57,17 @@ class PortfolioManager:
                 if isinstance(record, dict):
                     name = record.get("name", "Unknown")
                     created_at = record.get("created_at", "")
+                    position_count = record.get("position_count", 0)
                 else:
                     # Try to access as record attributes
                     name = getattr(record, "name", record.get("name", "Unknown") if hasattr(record, "get") else "Unknown")
                     created_at = getattr(record, "created_at", record.get("created_at", "") if hasattr(record, "get") else "")
+                    position_count = getattr(record, "position_count", record.get("position_count", 0) if hasattr(record, "get") else 0)
 
                 portfolio = {
                     "name": name,
                     "created_at": created_at,
-                    "position_count": 0
+                    "position_count": position_count
                 }
                 portfolios.append(portfolio)
                 logger.debug(f"Added portfolio: {portfolio}")
